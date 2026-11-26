@@ -18,7 +18,11 @@
             "pon la música de {Query} ahora",
             "quiero escuchar {Query} en el reproductor",
             "suena la canción {Query} por favor",
-            "toca un poco de {Query} ahora"
+            "toca un poco de {Query} ahora",
+            "reproduce {Query}",
+            "reproduce la canción {Query}",
+            "pon {Query}",
+            "escuchar {Query}"
           ]
         },
         {
