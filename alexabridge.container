@@ -22,12 +22,12 @@
 
 [Unit]
 Description=Alexa-Navidrome bridge HTTP service
-Documentation=https://github.com/lorenzo/alexa-music
+Documentation=https://github.com/atareao/alexa-music
 After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=localhost/alexa_navidrome_bridge:latest
+Image=ghcr.io/atareao/alexa-music:latest
 ContainerName=alexabridge
 EnvironmentFile=/etc/alexabridge.env
 Network=proxy.network

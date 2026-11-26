@@ -9,7 +9,7 @@ Implementar un pipeline de CI/CD que verifique el código y publique versiones d
 ## Arquitectura
 - **CI (verificación):** `.github/workflows/ci.yml` se ejecuta en `pull_request` y en `push` a `main`/`development`. Pasos: `cargo fmt -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Sin permisos de escritura en packages.
 - **CD (publicación):** `.github/workflows/release.yml` se ejecuta en `push` a `main`/`development` y en `push` de tags `v*`. Construye desde `Containerfile` con `docker/build-push-action` + `docker/setup-buildx-action`, hace login en `ghcr.io` con `GITHUB_TOKEN` (permiso `packages: write`), y publica tags semánticos con `docker/metadata-action`.
-- **Tags:** `latest` (solo en tag `v*` y `main`), `main`, `development`, `vX.Y.Z`, `X.Y.Z`, `sha-<corto>`.
+- **Tags:** `latest` (solo en `main`, rama por defecto), `main`, `development`, `vX.Y.Z`, `X.Y.Z`, `sha-<corto>`.
 - **Seguridad:** los PRs nunca publican; el token es el provisto por GitHub Actions; no se almacenan secretos adicionales en el workflow.
 
 ## Tareas
