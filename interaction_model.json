@@ -113,6 +113,15 @@
           ]
         },
         {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": [
+            "inicio",
+            "ir al inicio",
+            "volver al inicio",
+            "pantalla de inicio"
+          ]
+        },
+        {
           "name": "AMAZON.HelpIntent",
           "samples": [
             "ayuda",

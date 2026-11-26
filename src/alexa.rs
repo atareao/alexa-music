@@ -463,6 +463,7 @@ pub async fn handle_request(
                 handle_pause_stop_cancel()
             }
             "AMAZON.ResumeIntent" => handle_resume(req, state, client).await,
+            "AMAZON.NavigateHomeIntent" => handle_navigate_home(),
             "AMAZON.ShuffleOnIntent" => handle_shuffle(req, state, true).await,
             "AMAZON.ShuffleOffIntent" => handle_shuffle(req, state, false).await,
             other => {
@@ -492,6 +493,27 @@ pub fn handle_launch() -> AlexaResponse {
         "Bienvenido a tu biblioteca musical. Dime qué canción, artista o álbum quieres escuchar.",
         false,
     )
+}
+
+/// Returns to the skill home state, stopping playback and ending the session.
+pub fn handle_navigate_home() -> AlexaResponse {
+    info!("handling AMAZON.NavigateHomeIntent");
+    AlexaResponse {
+        version: "1.0".to_owned(),
+        response: Some(ResponseBody {
+            outputSpeech: Some(OutputSpeech {
+                speech_type: "PlainText".to_owned(),
+                text: "Volviendo al inicio.".to_owned(),
+            }),
+            shouldEndSession: Some(true),
+            directives: vec![Directive {
+                directive_type: "AudioPlayer.Stop".to_owned(),
+                playBehavior: None,
+                audioItem: None,
+            }],
+            ..ResponseBody::default()
+        }),
+    }
 }
 
 /// Searches songs, albums and artists (in that priority order) and plays the first track.
@@ -1247,6 +1269,27 @@ mod tests {
             .unwrap()
             .contains("Bienvenido"));
         assert_eq!(value["response"]["shouldEndSession"], false);
+    }
+
+    #[tokio::test]
+    async fn handle_request_navigate_home_speaks_and_stops_playback() {
+        let server = MockServer::start(Vec::new()).await;
+        let request = parse(intent_payload_named("AMAZON.NavigateHomeIntent", json!({})));
+
+        let value = serde_json::to_value(
+            handle_request(&request, &server.client(), &test_state(), &test_config()).await,
+        )
+        .unwrap();
+
+        assert!(value["response"]["outputSpeech"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Volviendo al inicio"));
+        let directives = value["response"]["directives"].as_array().unwrap();
+        assert!(directives
+            .iter()
+            .any(|directive| directive["type"] == "AudioPlayer.Stop"));
+        assert_eq!(value["response"]["shouldEndSession"], true);
     }
 
     #[tokio::test]
