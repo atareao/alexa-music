@@ -1,6 +1,9 @@
 //! Integration tests for the public webhook router and signature verification.
 
-use alexa_navidrome_bridge::middleware::{verify_signature_with_cert, AuthError};
+use alexa_navidrome_bridge::middleware::{
+    alexa_auth_headers, validate_alexa_headers, verify_signature_with_cert, AuthError,
+    SignatureAlgorithm, SIGNATURE_256_HEADER, SIGNATURE_HEADER,
+};
 use alexa_navidrome_bridge::{app_context, build_router, Config};
 use axum::body::{to_bytes, Body};
 use axum::extract::Request;
@@ -14,6 +17,7 @@ use rsa::pkcs8::EncodePublicKey;
 use rsa::signature::{SignatureEncoding, Signer};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde_json::{json, Value};
+use sha1::Sha1;
 use sha2::Sha256;
 use tower::ServiceExt;
 
@@ -159,6 +163,66 @@ async fn webhook_rejects_invalid_certificate_url() {
 }
 
 #[test]
+fn signature_256_over_raw_body_is_accepted() {
+    let private_key =
+        RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).expect("generated RSA key pair");
+    let spki_der = RsaPublicKey::from(&private_key)
+        .to_public_key_der()
+        .expect("encoded SPKI public key");
+    let body = serde_json::to_vec(&launch_payload()).expect("serializable payload");
+    let signature = SigningKey::<Sha256>::new(private_key).sign(&body);
+    let mut headers = auth_headers(CERT_URL);
+    headers.remove(SIGNATURE_HEADER);
+    headers.insert(
+        SIGNATURE_256_HEADER,
+        STANDARD
+            .encode(signature.to_bytes())
+            .parse()
+            .expect("valid signature header"),
+    );
+
+    validate_alexa_headers(&headers).expect("Signature-256 headers are valid");
+    let (_, signature_b64, algorithm) =
+        alexa_auth_headers(&headers).expect("valid authentication headers");
+    assert_eq!(algorithm, SignatureAlgorithm::Sha256);
+
+    let result = verify_signature_with_cert(spki_der.as_ref(), signature_b64, algorithm, &body);
+
+    assert!(result.is_ok(), "raw-body signature must verify: {result:?}");
+}
+
+#[test]
+fn legacy_signature_header_over_raw_body_is_accepted() {
+    let private_key =
+        RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).expect("generated RSA key pair");
+    let spki_der = RsaPublicKey::from(&private_key)
+        .to_public_key_der()
+        .expect("encoded SPKI public key");
+    let body = serde_json::to_vec(&launch_payload()).expect("serializable payload");
+    let signature = SigningKey::<Sha1>::new(private_key).sign(&body);
+    let mut headers = auth_headers(CERT_URL);
+    headers.insert(
+        SIGNATURE_HEADER,
+        STANDARD
+            .encode(signature.to_bytes())
+            .parse()
+            .expect("valid signature header"),
+    );
+
+    validate_alexa_headers(&headers).expect("legacy headers are valid");
+    let (_, signature_b64, algorithm) =
+        alexa_auth_headers(&headers).expect("valid authentication headers");
+    assert_eq!(algorithm, SignatureAlgorithm::Sha1);
+
+    let result = verify_signature_with_cert(spki_der.as_ref(), signature_b64, algorithm, &body);
+
+    assert!(
+        result.is_ok(),
+        "legacy raw-body signature must verify: {result:?}"
+    );
+}
+
+#[test]
 fn verify_signature_with_cert_accepts_signature_from_generated_rsa_key() {
     let private_key =
         RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).expect("generated RSA key pair");
@@ -167,15 +231,15 @@ fn verify_signature_with_cert_accepts_signature_from_generated_rsa_key() {
         .to_public_key_der()
         .expect("encoded SPKI public key");
     let body = br#"{"request":{"type":"LaunchRequest"}}"#;
-
-    let mut signed = Vec::with_capacity(body.len() + 10);
-    signed.extend_from_slice(b"POST\n/webhook\n");
-    signed.extend_from_slice(body);
-    let signature = SigningKey::<Sha256>::new(private_key).sign(&signed);
+    let signature = SigningKey::<Sha256>::new(private_key).sign(body);
     let signature_b64 = STANDARD.encode(signature.to_bytes());
 
-    let result =
-        verify_signature_with_cert(spki_der.as_ref(), &signature_b64, "POST", "/webhook", body);
+    let result = verify_signature_with_cert(
+        spki_der.as_ref(),
+        &signature_b64,
+        SignatureAlgorithm::Sha256,
+        body,
+    );
 
     assert!(result.is_ok());
 }
@@ -188,14 +252,13 @@ fn verify_signature_with_cert_rejects_signature_over_different_body() {
     let spki_der = public_key
         .to_public_key_der()
         .expect("encoded SPKI public key");
-    let signature = SigningKey::<Sha256>::new(private_key).sign(b"POST\n/webhook\noriginal");
+    let signature = SigningKey::<Sha256>::new(private_key).sign(b"original");
     let signature_b64 = STANDARD.encode(signature.to_bytes());
 
     let result = verify_signature_with_cert(
         spki_der.as_ref(),
         &signature_b64,
-        "POST",
-        "/webhook",
+        SignatureAlgorithm::Sha256,
         b"tampered",
     );
 
@@ -210,7 +273,8 @@ fn verify_signature_with_cert_rejects_malformed_base64() {
         .to_public_key_der()
         .expect("encoded SPKI public key");
 
-    let result = verify_signature_with_cert(spki_der.as_ref(), "%%%", "POST", "/webhook", b"{}");
+    let result =
+        verify_signature_with_cert(spki_der.as_ref(), "%%%", SignatureAlgorithm::Sha256, b"{}");
 
     assert!(matches!(result, Err(AuthError::SignatureDecode(_))));
 }

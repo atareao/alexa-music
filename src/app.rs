@@ -96,8 +96,10 @@ async fn verify_request(
         return next.run(req).await;
     }
 
-    let (cert_url, signature) = match alexa_auth_headers(req.headers()) {
-        Ok((cert_url, signature)) => (cert_url.to_owned(), signature.to_owned()),
+    let (cert_url, signature, algorithm) = match alexa_auth_headers(req.headers()) {
+        Ok((cert_url, signature, algorithm)) => {
+            (cert_url.to_owned(), signature.to_owned(), algorithm)
+        }
         Err(err) => {
             warn!(error = %err, "rejecting request without authentication headers");
             return StatusCode::UNAUTHORIZED.into_response();
@@ -112,15 +114,7 @@ async fn verify_request(
         }
     };
 
-    if let Err(err) = verify_signature(
-        client,
-        &cert_url,
-        &signature,
-        parts.method.as_str(),
-        parts.uri.path(),
-        &body_bytes,
-    )
-    .await
+    if let Err(err) = verify_signature(client, &cert_url, &signature, algorithm, &body_bytes).await
     {
         warn!(error = %err, path = %parts.uri.path(), "rejecting request with invalid Alexa signature");
         return StatusCode::UNAUTHORIZED.into_response();
