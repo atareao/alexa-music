@@ -17,3 +17,9 @@
 ## Comandos útiles
 - `cargo test` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`
 - `RUST_LOG=debug cargo run` (requiere variables de entorno)
+
+## CI/CD (PLAN-001, issue #1)
+- Implementado: `.github/workflows/ci.yml` (fmt/clippy/test en PRs) y `.github/workflows/release.yml` (publicación en `ghcr.io/atareao/alexa-music`).
+- Tags publicados: `latest` (solo en `main`, rama por defecto), `main`, `development`, `vX.Y.Z`, `X.Y.Z`, `sha-<corto>`.
+- Consumidores: `compose.yml` y `alexabridge.container` usan `ghcr.io/atareao/alexa-music:latest` (el `build:` local de Compose está comentado).
+- Ver `docs/cicd.md` para el flujo completo de release.
