@@ -1,0 +1,48 @@
+# alexabridge.container — Quadlet for Alexa-Navidrome bridge
+#
+# Install into /etc/containers/systemd/ (root) or
+# ~/.config/containers/systemd/ (rootless) and then:
+#   systemctl daemon-reload
+#   systemctl start alexabridge.service
+#
+# Requires the `proxy.network` Quadlet/network to exist (Traefik's network).
+#
+# Example /etc/alexabridge.env (mode 0600, root:root):
+#   ------------------------- begin -------------------------
+#   NAVIDROME_URL=https://music.example.com
+#   NAVIDROME_USER=alexa
+#   NAVIDROME_PASSWORD=<strong-password>
+#   ALEXA_SKILL_ID=amzn1.ask.skill.<skill-id>
+#   PORT=3000
+#   RUST_LOG=info
+#   -------------------------- end --------------------------
+#
+# Traefik routes https://alexa.example.com to this container on port 3000.
+# Change the Host() rule below to match your public DNS name.
+
+[Unit]
+Description=Alexa-Navidrome bridge HTTP service
+Documentation=https://github.com/lorenzo/alexa-music
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/alexa_navidrome_bridge:latest
+ContainerName=alexabridge
+EnvironmentFile=/etc/alexabridge.env
+Network=proxy.network
+Label=traefik.enable=true
+Label=traefik.http.routers.alexabridge.rule=Host(`alexa.example.com`)
+Label=traefik.http.routers.alexabridge.entrypoints=websecure
+Label=traefik.http.routers.alexabridge.tls.certresolver=letsencrypt
+Label=traefik.http.services.alexabridge.loadbalancer.server.port=3000
+# Optional hardening (remove if the image needs to write to its root filesystem).
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target default.target

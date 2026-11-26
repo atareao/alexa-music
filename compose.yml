@@ -1,0 +1,57 @@
+# Alexa-Navidrome Bridge — despliegue con Traefik en la red externa `proxy.network`.
+# Compila desde Containerfile (multi-stage). Para usar una imagen preconstruida,
+# comenta el bloque `build:` y cambia `image:` por <registro>/alexabridge:<tag>.
+# Si dejas ambos, Compose compila y etiqueta el resultado con el nombre de `image:`.
+
+services:
+  alexabridge:
+    build:
+      context: .
+      dockerfile: Containerfile  # Compose busca Dockerfile por defecto
+    image: ${ALEXABRIDGE_IMAGE:-alexabridge:local}
+    container_name: alexabridge
+    restart: on-failure
+
+    # alexabridge.env (no versionar secretos) debe contener:
+    #   NAVIDROME_URL=https://navidrome.ejemplo.com
+    #   NAVIDROME_USER=usuario
+    #   NAVIDROME_PASSWORD=...          # obligatorio
+    #   ALEXA_SKILL_ID=amzn1.ask.skill.xxx  # opcional
+    #   PORT=3000                       # opcional, por defecto 3000
+    #   RUST_LOG=info                   # opcional, por defecto info
+    #   SKIP_SIGNATURE_VERIFICATION=false   # solo desarrollo
+    env_file:
+      - ./alexabridge.env
+
+    networks:
+      - proxy
+
+    labels:
+      traefik.enable: "true"
+      # Cambia el host por el real antes de desplegar.
+      traefik.http.routers.alexabridge.rule: "Host(`alexa.example.com`)"
+      traefik.http.routers.alexabridge.entrypoints: "websecure"
+      traefik.http.routers.alexabridge.tls.certresolver: "letsencrypt"
+      traefik.http.services.alexabridge.loadbalancer.server.port: "3000"
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true  # la imagen solo lee el binario; la app no escribe a disco
+
+    healthcheck:  # equivalente al HEALTHCHECK del Containerfile
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    # Sin publicar el puerto: Traefik entra por `proxy.network` al puerto interno 3000.
+    # Depuración local: ports: ["127.0.0.1:3000:3000"]
+    # Si cambias PORT en el env, ajusta también la URL del healthcheck.
+
+networks:
+  proxy:
+    external: true
+    name: proxy.network  # nombre exacto: Compose no lo prefija con el proyecto

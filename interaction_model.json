@@ -1,0 +1,132 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "locale": "es-ES",
+      "invocationName": "puente musical",
+      "intents": [
+        {
+          "name": "PlayMusicIntent",
+          "slots": [
+            {
+              "name": "Query",
+              "type": "AMAZON.SearchQuery",
+              "samples": []
+            }
+          ],
+          "samples": [
+            "reproduce la canción {Query} por favor",
+            "pon la música de {Query} ahora",
+            "quiero escuchar {Query} en el reproductor",
+            "suena la canción {Query} por favor",
+            "toca un poco de {Query} ahora"
+          ]
+        },
+        {
+          "name": "PlayPlaylistIntent",
+          "slots": [
+            {
+              "name": "Playlist",
+              "type": "AMAZON.SearchQuery",
+              "samples": []
+            }
+          ],
+          "samples": [
+            "reproduce la lista de reproducción {Query} por favor",
+            "pon la playlist {Query} ahora",
+            "quiero escuchar la lista {Query} en el reproductor",
+            "suena la lista de canciones {Query} por favor",
+            "abre la lista {Query} y reprodúcela"
+          ]
+        },
+        {
+          "name": "AMAZON.NextIntent",
+          "samples": [
+            "siguiente",
+            "siguiente canción",
+            "pasar a la siguiente",
+            "la siguiente canción por favor",
+            "saltar esta canción"
+          ]
+        },
+        {
+          "name": "AMAZON.PreviousIntent",
+          "samples": [
+            "anterior",
+            "canción anterior",
+            "volver a la anterior",
+            "la canción anterior por favor",
+            "rebobinar a la canción anterior"
+          ]
+        },
+        {
+          "name": "AMAZON.PauseIntent",
+          "samples": [
+            "pausa",
+            "pausar la música",
+            "para un momento",
+            "detener temporalmente la reproducción"
+          ]
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": [
+            "para",
+            "parar la música",
+            "detén la reproducción",
+            "basta ya de música"
+          ]
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": [
+            "cancela",
+            "cancelar",
+            "no hagas nada",
+            "olvida eso"
+          ]
+        },
+        {
+          "name": "AMAZON.ResumeIntent",
+          "samples": [
+            "continuar",
+            "reanudar la música",
+            "seguir reproduciendo",
+            "sigue con la canción"
+          ]
+        },
+        {
+          "name": "AMAZON.ShuffleOnIntent",
+          "samples": [
+            "activar aleatorio",
+            "reproduce en aleatorio",
+            "pon modo aleatorio",
+            "mezclar las canciones"
+          ]
+        },
+        {
+          "name": "AMAZON.ShuffleOffIntent",
+          "samples": [
+            "desactivar aleatorio",
+            "quitar el modo aleatorio",
+            "reproduce en orden",
+            "dejar de mezclar las canciones"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": [
+            "ayuda",
+            "¿qué puedes hacer?",
+            "cómo te uso",
+            "ayúdame a reproducir música"
+          ]
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        }
+      ],
+      "types": []
+    }
+  }
+}
