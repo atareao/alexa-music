@@ -2,7 +2,7 @@
   "interactionModel": {
     "languageModel": {
       "locale": "es-ES",
-      "invocationName": "puente musical",
+      "invocationName": "biblioteca musical",
       "intents": [
         {
           "name": "PlayMusicIntent",
