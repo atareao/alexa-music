@@ -1,14 +1,14 @@
 # Alexa-Navidrome Bridge — despliegue con Traefik en la red externa `proxy.network`.
-# Compila desde Containerfile (multi-stage). Para usar una imagen preconstruida,
-# comenta el bloque `build:` y cambia `image:` por <registro>/alexabridge:<tag>.
-# Si dejas ambos, Compose compila y etiqueta el resultado con el nombre de `image:`.
+# La imagen se publica desde release.yml en ghcr.io/atareao/alexa-music:latest.
+# Para construir localmente, descomenta build y usa docker compose build.
 
 services:
   alexabridge:
-    build:
-      context: .
-      dockerfile: Containerfile  # Compose busca Dockerfile por defecto
-    image: ${ALEXABRIDGE_IMAGE:-alexabridge:local}
+    # Para construir localmente, descomenta build y usa docker compose build.
+    # build:
+    #   context: .
+    #   dockerfile: Containerfile  # Compose busca Dockerfile por defecto
+    image: ${ALEXABRIDGE_IMAGE:-ghcr.io/atareao/alexa-music:latest}
     container_name: alexabridge
     restart: on-failure
 

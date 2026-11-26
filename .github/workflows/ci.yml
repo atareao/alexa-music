@@ -1,0 +1,36 @@
+# CI: verificaciones de calidad para pull requests y ramas principales.
+# No publica artefactos ni imágenes: solo lectura del repositorio.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, development]
+
+# Permisos mínimos: el pipeline de CI no necesita escribir en el registro.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout del código fuente.
+      - uses: actions/checkout@v4
+
+      # Instala la toolchain estable de Rust con rustfmt y clippy.
+      - uses: dtolnay/rust-toolchain@1.83.0
+        with:
+          components: rustfmt, clippy
+
+      # Cachea los artefactos de Cargo entre ejecuciones para acelerar el CI.
+      - uses: Swatinem/rust-cache@v2
+
+      # Comprueba que el código está formateado según rustfmt.
+      - run: cargo fmt -- --check
+
+      # Analiza el código con clippy y trata cualquier aviso como error.
+      - run: cargo clippy --all-targets -- -D warnings
+
+      # Ejecuta la suite de tests (77 tests).
+      - run: cargo test
