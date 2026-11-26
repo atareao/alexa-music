@@ -25,8 +25,7 @@ jobs:
       # Checkout del código fuente.
       - uses: actions/checkout@v4
 
-      # Prepara QEMU y Buildx para builds multi-arquitectura.
-      - uses: docker/setup-qemu-action@v3
+      # Prepara Buildx para construir y publicar la imagen.
       - uses: docker/setup-buildx-action@v3
 
       # Login en GHCR con el token efímero del workflow (sin secretos manuales).
@@ -57,7 +56,8 @@ jobs:
         with:
           context: .
           file: ./Containerfile
-          platforms: linux/amd64,linux/arm64
+          # arm64 se evaluará en un follow-up con caché caliente.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

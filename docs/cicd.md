@@ -28,8 +28,10 @@ Pipeline de GitHub Actions que verifica el código Rust y publica la imagen OCI 
 | Imagen | `ghcr.io/atareao/alexa-music` |
 | Token | `${{ secrets.GITHUB_TOKEN }}` (automático) |
 | Permiso publicación | `packages: write` |
-| Plataformas | `linux/amd64`, `linux/arm64` |
+| Plataformas | `linux/amd64` |
 | Toolchain Rust | `1.88.0` — CI: `dtolnay/rust-toolchain@1.88.0`; builder: `rust:1.88-alpine` |
+
+> **arm64 pospuesto:** el primer build bajo QEMU excede el tiempo razonable del pipeline; se reintroducirá con caché GHA caliente.
 
 ## Cómo publicar una versión
 1. Desde `development`, crear release branch / verificar CI en PR.
