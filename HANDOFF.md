@@ -23,3 +23,8 @@
 - Tags publicados: `latest` (solo en `main`, rama por defecto), `main`, `development`, `vX.Y.Z`, `X.Y.Z`, `sha-<corto>`.
 - Consumidores: `compose.yml` y `alexabridge.container` usan `ghcr.io/atareao/alexa-music:latest` (el `build:` local de Compose está comentado).
 - Ver `docs/cicd.md` para el flujo completo de release.
+
+## Estado CI/CD verificado (cierre)
+- GitHub Actions: CI verde en PRs y pushes a main; Release publica `ghcr.io/atareao/alexa-music:latest`, `:main`, `:sha-<corto>` en ~3 min.
+- Toolchain fijada a 1.88.0 (MSRV de Cargo.lock), Containerfile con dummy target antes de `cargo fetch`.
+- Publicación multi-arch pospuesta (arm64 lento bajo QEMU); ver `docs/cicd.md`.
