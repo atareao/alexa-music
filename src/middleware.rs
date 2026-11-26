@@ -1,10 +1,11 @@
-//! Validation of Alexa `SignatureCertChainUrl` and `Signature` headers.
+//! Validation of Alexa `SignatureCertChainUrl` and signature headers.
 //!
 //! The structural checks (header presence, certificate URL shape and a
 //! base64-looking signature) always run. Full RSA-SHA256 verification is
 //! performed by [`verify_signature`] on the raw request body; callers that
 //! already hold a certificate's SPKI public key can use the network-free
-//! [`verify_signature_with_cert`] instead.
+//! [`verify_signature_with_cert`] instead. The legacy `Signature` header uses
+//! RSA-SHA1 over the same raw body.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -14,6 +15,7 @@ use axum::http::HeaderMap;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{Client, Url};
 use rsa::{pkcs1v15, pkcs8::DecodePublicKey, signature::Verifier, RsaPublicKey};
+use sha1::Sha1;
 use sha2::Sha256;
 use thiserror::Error;
 
@@ -21,6 +23,17 @@ use thiserror::Error;
 pub const CERT_CHAIN_URL_HEADER: &str = "SignatureCertChainUrl";
 /// Name of the header carrying the base64-encoded request signature.
 pub const SIGNATURE_HEADER: &str = "Signature";
+/// Name of the preferred header carrying the base64-encoded RSA-SHA256 signature.
+pub const SIGNATURE_256_HEADER: &str = "Signature-256";
+
+/// Hashing algorithm used by the selected Alexa signature header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SignatureAlgorithm {
+    /// Legacy `Signature` header: RSA-SHA1 over the raw request body.
+    Sha1,
+    /// Preferred `Signature-256` header: RSA-SHA256 over the raw request body.
+    Sha256,
+}
 
 const CERT_HOST: &str = "s3.amazonaws.com";
 const CERT_PATH_PREFIX: &str = "/echo.api/";
@@ -48,7 +61,7 @@ pub enum AuthError {
     #[error("invalid SignatureCertChainUrl")]
     InvalidCertChainUrl,
     /// The signature is empty or does not look like base64.
-    #[error("invalid Signature header")]
+    #[error("invalid signature header")]
     InvalidSignature,
     /// The signing certificate could not be downloaded.
     #[error("failed to fetch signing certificate: {0}")]
@@ -67,15 +80,36 @@ pub enum AuthError {
     Verification(rsa::signature::Error),
 }
 
-/// Returns the two Alexa authentication headers as trimmed strings.
+/// Returns the certificate URL, signature and algorithm from Alexa's headers.
+///
+/// `Signature-256` (RSA-SHA256) is preferred; the legacy `Signature` header
+/// (RSA-SHA1) is used only when `Signature-256` is absent. When both are
+/// present, `Signature-256` wins even if the legacy value is malformed.
 ///
 /// # Errors
 ///
 /// Returns [`AuthError`] when a header is missing, non-UTF-8 or empty.
-pub fn alexa_auth_headers(headers: &HeaderMap) -> Result<(&str, &str), AuthError> {
+pub fn alexa_auth_headers(
+    headers: &HeaderMap,
+) -> Result<(&str, &str, SignatureAlgorithm), AuthError> {
     let cert_url = header_value(headers, CERT_CHAIN_URL_HEADER)?;
-    let signature = header_value(headers, SIGNATURE_HEADER)?;
-    Ok((cert_url, signature))
+    let (signature, algorithm) = signature_values(headers)?;
+    Ok((cert_url, signature, algorithm))
+}
+
+/// Selects the signature header and its algorithm.
+fn signature_values(headers: &HeaderMap) -> Result<(&str, SignatureAlgorithm), AuthError> {
+    if headers.contains_key(SIGNATURE_256_HEADER) {
+        Ok((
+            header_value(headers, SIGNATURE_256_HEADER)?,
+            SignatureAlgorithm::Sha256,
+        ))
+    } else {
+        Ok((
+            header_value(headers, SIGNATURE_HEADER)?,
+            SignatureAlgorithm::Sha1,
+        ))
+    }
 }
 
 /// Validates the structure of the Alexa authentication headers.
@@ -89,7 +123,7 @@ pub fn alexa_auth_headers(headers: &HeaderMap) -> Result<(&str, &str), AuthError
 /// decoded, the certificate URL is not an Amazon S3 `https` URL under
 /// `/echo.api/`, or the signature is not base64-looking.
 pub fn validate_alexa_headers(headers: &HeaderMap) -> Result<(), AuthError> {
-    let (cert_url, signature) = alexa_auth_headers(headers)?;
+    let (cert_url, signature, _) = alexa_auth_headers(headers)?;
 
     if !is_allowed_cert_url(normalized_cert_url(cert_url)) {
         return Err(AuthError::InvalidCertChainUrl);
@@ -105,11 +139,12 @@ pub fn validate_alexa_headers(headers: &HeaderMap) -> Result<(), AuthError> {
     Ok(())
 }
 
-/// Verifies the Alexa RSA-SHA256 signature over `method\npath\nbody`.
+/// Verifies the Alexa RSA signature over the raw request body.
 ///
-/// The signing certificate chain is downloaded from `cert_url` with the given
-/// HTTP client and cached in memory by its normalized URL. The first PEM
-/// certificate in the chain supplies the RSA public key.
+/// `algorithm` selects RSA-SHA256 for `Signature-256` and RSA-SHA1 for the
+/// legacy `Signature` header. The signing certificate chain is downloaded from
+/// `cert_url` with the given HTTP client and cached in memory by its normalized
+/// URL. The first PEM certificate in the chain supplies the RSA public key.
 ///
 /// # Errors
 ///
@@ -120,8 +155,7 @@ pub async fn verify_signature(
     client: &Client,
     cert_url: &str,
     signature_b64: &str,
-    method: &str,
-    path: &str,
+    algorithm: SignatureAlgorithm,
     body: &[u8],
 ) -> Result<(), AuthError> {
     // Re-check the URL here so direct callers cannot fetch an arbitrary host.
@@ -143,14 +177,15 @@ pub async fn verify_signature(
         return Err(AuthError::InvalidCertValidity);
     }
 
-    verify_signature_decoded(certificate.public_key().raw, &signature, method, path, body)
+    verify_signature_decoded(certificate.public_key().raw, &signature, algorithm, body)
 }
 
 /// Verifies a signature against an already-obtained SPKI DER public key.
 ///
 /// This is the network-free counterpart of [`verify_signature`]: it performs
-/// the same base64 decoding and RSA-SHA256 check without validating or
-/// fetching a certificate URL. The caller is responsible for trusting `cert_spki_der`.
+/// the same base64 decoding and RSA verification over the raw body without
+/// validating or fetching a certificate URL. The caller is responsible for
+/// trusting `cert_spki_der`.
 ///
 /// # Errors
 ///
@@ -159,12 +194,11 @@ pub async fn verify_signature(
 pub fn verify_signature_with_cert(
     cert_spki_der: &[u8],
     signature_b64: &str,
-    method: &str,
-    path: &str,
+    algorithm: SignatureAlgorithm,
     body: &[u8],
 ) -> Result<(), AuthError> {
     let signature = decode_signature(signature_b64)?;
-    verify_signature_decoded(cert_spki_der, &signature, method, path, body)
+    verify_signature_decoded(cert_spki_der, &signature, algorithm, body)
 }
 
 /// Decodes and validates the size of a base64-encoded PKCS#1 v1.5 signature.
@@ -179,28 +213,19 @@ fn decode_signature(signature_b64: &str) -> Result<pkcs1v15::Signature, AuthErro
 fn verify_signature_decoded(
     cert_spki_der: &[u8],
     signature: &pkcs1v15::Signature,
-    method: &str,
-    path: &str,
+    algorithm: SignatureAlgorithm,
     body: &[u8],
 ) -> Result<(), AuthError> {
     let public_key = RsaPublicKey::from_public_key_der(cert_spki_der)
         .map_err(|err| AuthError::CertParse(err.to_string()))?;
-    let signed = canonical_signed_bytes(method, path, body);
-    let verifying_key = pkcs1v15::VerifyingKey::<Sha256>::new(public_key);
-    verifying_key
-        .verify(&signed, signature)
-        .map_err(AuthError::Verification)
-}
-
-/// Builds the raw bytes Alexa signs: uppercase method, path and raw body.
-fn canonical_signed_bytes(method: &str, path: &str, body: &[u8]) -> Vec<u8> {
-    let mut signed = Vec::with_capacity(method.len() + path.len() + body.len() + 2);
-    signed.extend(method.bytes().map(|byte| byte.to_ascii_uppercase()));
-    signed.push(b'\n');
-    signed.extend_from_slice(path.as_bytes());
-    signed.push(b'\n');
-    signed.extend_from_slice(body);
-    signed
+    match algorithm {
+        SignatureAlgorithm::Sha256 => pkcs1v15::VerifyingKey::<Sha256>::new(public_key)
+            .verify(body, signature)
+            .map_err(AuthError::Verification),
+        SignatureAlgorithm::Sha1 => pkcs1v15::VerifyingKey::<Sha1>::new(public_key)
+            .verify(body, signature)
+            .map_err(AuthError::Verification),
+    }
 }
 
 /// Drops query strings and fragments from a certificate URL.
@@ -317,6 +342,10 @@ fn header_value<'a>(headers: &'a HeaderMap, name: &'static str) -> Result<&'a st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rsa::pkcs1v15::SigningKey;
+    use rsa::pkcs8::EncodePublicKey;
+    use rsa::signature::{SignatureEncoding, Signer};
+    use rsa::RsaPrivateKey;
 
     fn headers(cert_url: &str, signature: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -418,17 +447,107 @@ mod tests {
     }
 
     #[test]
-    fn canonical_string_uses_uppercase_method_path_and_raw_body() {
-        let signed = canonical_signed_bytes("post", "/webhook", br#"{"a":1}"#);
+    fn accepts_signature_256_header_as_preferred() {
+        let mut headers = headers(GOOD_URL, "legacySignature");
+        headers.insert(
+            SIGNATURE_256_HEADER,
+            "sha256Signature".parse().expect("valid header"),
+        );
 
-        assert_eq!(signed.as_slice(), b"POST\n/webhook\n{\"a\":1}");
+        let (_, signature, algorithm) =
+            alexa_auth_headers(&headers).expect("valid authentication headers");
+
+        assert_eq!(signature, "sha256Signature");
+        assert_eq!(algorithm, SignatureAlgorithm::Sha256);
     }
 
     #[test]
-    fn canonical_string_preserves_non_utf8_body_bytes() {
-        let signed = canonical_signed_bytes("post", "/webhook", b"a\xff\0b");
+    fn accepts_legacy_signature_header_as_fallback() {
+        let headers = headers(GOOD_URL, "legacySignature");
 
-        assert_eq!(signed.as_slice(), b"POST\n/webhook\na\xff\0b");
+        let (_, signature, algorithm) =
+            alexa_auth_headers(&headers).expect("valid authentication headers");
+
+        assert_eq!(signature, "legacySignature");
+        assert_eq!(algorithm, SignatureAlgorithm::Sha1);
+    }
+
+    #[test]
+    fn rejects_malformed_preferred_signature_without_falling_back() {
+        let mut headers = headers(GOOD_URL, "legacySignature");
+        headers.insert(SIGNATURE_256_HEADER, "not base64!".parse().expect("header"));
+
+        assert!(matches!(
+            validate_alexa_headers(&headers),
+            Err(AuthError::InvalidSignature)
+        ));
+    }
+
+    #[test]
+    fn accepts_rsa_sha256_signature_over_raw_body() {
+        let private_key =
+            RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).expect("generated RSA key pair");
+        let spki_der = RsaPublicKey::from(&private_key)
+            .to_public_key_der()
+            .expect("encoded SPKI public key");
+        let body = br#"{"request":{"type":"LaunchRequest"}}"#;
+        let signature = SigningKey::<Sha256>::new(private_key).sign(body);
+        let signature_b64 = STANDARD.encode(signature.to_bytes());
+
+        let result = verify_signature_with_cert(
+            spki_der.as_ref(),
+            &signature_b64,
+            SignatureAlgorithm::Sha256,
+            body,
+        );
+
+        assert!(result.is_ok(), "raw-body signature must verify: {result:?}");
+    }
+
+    #[test]
+    fn accepts_rsa_sha1_signature_over_raw_body_for_legacy_header() {
+        let private_key =
+            RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).expect("generated RSA key pair");
+        let spki_der = RsaPublicKey::from(&private_key)
+            .to_public_key_der()
+            .expect("encoded SPKI public key");
+        let body = br#"{"request":{"type":"LaunchRequest"}}"#;
+        let signature = SigningKey::<Sha1>::new(private_key).sign(body);
+        let signature_b64 = STANDARD.encode(signature.to_bytes());
+
+        let result = verify_signature_with_cert(
+            spki_der.as_ref(),
+            &signature_b64,
+            SignatureAlgorithm::Sha1,
+            body,
+        );
+
+        assert!(
+            result.is_ok(),
+            "legacy raw-body signature must verify: {result:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_tampered_body_after_valid_raw_body_signature() {
+        let private_key =
+            RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).expect("generated RSA key pair");
+        let spki_der = RsaPublicKey::from(&private_key)
+            .to_public_key_der()
+            .expect("encoded SPKI public key");
+        let signed_body = br#"{"request":{"type":"LaunchRequest"}}"#;
+        let signature = SigningKey::<Sha256>::new(private_key).sign(signed_body);
+        let signature_b64 = STANDARD.encode(signature.to_bytes());
+        let tampered_body = br#"{"request":{"type":"IntentRequest"}}"#;
+
+        let result = verify_signature_with_cert(
+            spki_der.as_ref(),
+            &signature_b64,
+            SignatureAlgorithm::Sha256,
+            tampered_body,
+        );
+
+        assert!(matches!(result, Err(AuthError::Verification(_))));
     }
 
     #[test]
@@ -496,8 +615,14 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_invalid_signature_encoding_without_network() {
-        let result =
-            verify_signature(&Client::new(), GOOD_URL, "%%%", "POST", "/webhook", b"{}").await;
+        let result = verify_signature(
+            &Client::new(),
+            GOOD_URL,
+            "%%%",
+            SignatureAlgorithm::Sha256,
+            b"{}",
+        )
+        .await;
 
         assert!(matches!(result, Err(AuthError::SignatureDecode(_))));
     }
@@ -508,8 +633,7 @@ mod tests {
             &Client::new(),
             "https://evil.example/echo.api/cert.pem",
             "abc123",
-            "POST",
-            "/webhook",
+            SignatureAlgorithm::Sha256,
             b"{}",
         )
         .await;
@@ -523,8 +647,7 @@ mod tests {
             &Client::new(),
             "https://evil.example/echo.api/cert.pem?n=1",
             "abc123",
-            "POST",
-            "/webhook",
+            SignatureAlgorithm::Sha256,
             b"{}",
         )
         .await;
