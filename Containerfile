@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# Pinned tags: Rust 1.85 / Alpine 3.20 (edition2024 estable en Rust 1.85; ver CI).
+# Pinned tags: Rust 1.88 / Alpine 3.20 (MSRV del lockfile: icu_* 2.4.0 y time 0.3.55 requieren 1.88; ver CI).
 # Revisit pins with every toolchain upgrade; digests are preferred for reproducible builds.
-FROM rust:1.85-alpine AS builder
+FROM rust:1.88-alpine AS builder
 
 # musl-dev for the target libc; perl is required by `ring` (rustls crypto backend).
 RUN apk add --no-cache musl-dev perl

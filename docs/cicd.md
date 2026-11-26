@@ -29,7 +29,7 @@ Pipeline de GitHub Actions que verifica el código Rust y publica la imagen OCI 
 | Token | `${{ secrets.GITHUB_TOKEN }}` (automático) |
 | Permiso publicación | `packages: write` |
 | Plataformas | `linux/amd64`, `linux/arm64` |
-| Toolchain Rust | `1.85.0` — CI: `dtolnay/rust-toolchain@1.85.0`; builder: `rust:1.85-alpine` |
+| Toolchain Rust | `1.88.0` — CI: `dtolnay/rust-toolchain@1.88.0`; builder: `rust:1.88-alpine` |
 
 ## Cómo publicar una versión
 1. Desde `development`, crear release branch / verificar CI en PR.
@@ -43,7 +43,7 @@ Pipeline de GitHub Actions que verifica el código Rust y publica la imagen OCI 
 - `docker compose config` para validar el compose.
 
 ## Decisiones y follow-ups
-- La toolchain debe ser >= 1.85 porque Cargo.lock incluye crates con edition2024.
+- La toolchain debe ser >= 1.88 (MSRV de icu_* 2.4.0 y time 0.3.55 en Cargo.lock).
 - Se usa `GITHUB_TOKEN` en lugar de PAT: el registry es el mismo repo, sin secretos extra.
 - `latest` se reserva para `main` (branch por defecto) para no sobreescribir con development.
 - Follow-up: añadir escaneo de vulnerabilidades (Trivy) y firma de imagen (cosign).

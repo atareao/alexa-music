@@ -18,8 +18,8 @@ jobs:
       # Checkout del código fuente.
       - uses: actions/checkout@v4
 
-      # Instala Rust 1.85.0 (edición 2024 estable desde 1.85; requerido por Cargo.lock).
-      - uses: dtolnay/rust-toolchain@1.85.0
+      # Instala Rust 1.88.0 (MSRV del lockfile: icu_* 2.4.0 y time 0.3.55 requieren 1.88).
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: rustfmt, clippy
 
