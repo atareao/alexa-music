@@ -9,8 +9,10 @@ RUN apk add --no-cache musl-dev perl
 WORKDIR /app
 
 # Manifests first: dependency fetching is cached until Cargo.toml/Cargo.lock change.
+# Cargo needs a real target in the manifest, so create a dummy main.rs; the real
+# sources copied below overwrite it before the build.
 COPY Cargo.toml Cargo.lock ./
-RUN cargo fetch --locked
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs && cargo fetch --locked
 
 COPY src ./src
 RUN cargo build --release --locked --offline
