@@ -22,7 +22,7 @@ Implementar un pipeline de CI/CD que verifique el código y publique versiones d
 
 ### Tarea 2: Workflow de CI
 - [ ] Paso 1: Crear `.github/workflows/ci.yml` con trigger `pull_request` y `push` a `main`/`development`.
-- [ ] Paso 2: Job `verify` en `ubuntu-latest`: checkout, `dtolnay/rust-toolchain@stable` con componentes `rustfmt`, `clippy`; cache de Cargo (Swatinem/rust-cache); `cargo fmt -- --check`; `cargo clippy --all-targets -- -D warnings`; `cargo test`.
+- [ ] Paso 2: Job `verify` en `ubuntu-latest`: checkout, `dtolnay/rust-toolchain@1.85.0` con componentes `rustfmt`, `clippy`; cache de Cargo (Swatinem/rust-cache); `cargo fmt -- --check`; `cargo clippy --all-targets -- -D warnings`; `cargo test`. La versión está fijada porque `Cargo.lock` incluye crates con edition2024 (estabilizado en Rust 1.85).
 - [ ] Paso 3: `permissions: contents: read` (sin packages: write).
 
 ### Tarea 3: Workflow de CD
