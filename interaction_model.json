@@ -2,7 +2,7 @@
   "interactionModel": {
     "languageModel": {
       "locale": "es-ES",
-      "invocationName": "puente musical",
+      "invocationName": "biblioteca musical",
       "intents": [
         {
           "name": "PlayMusicIntent",
@@ -31,11 +31,11 @@
             }
           ],
           "samples": [
-            "reproduce la lista de reproducción {Query} por favor",
-            "pon la playlist {Query} ahora",
-            "quiero escuchar la lista {Query} en el reproductor",
-            "suena la lista de canciones {Query} por favor",
-            "abre la lista {Query} y reprodúcela"
+            "reproduce la lista de reproducción {Playlist} por favor",
+            "pon la playlist {Playlist} ahora",
+            "quiero escuchar la lista {Playlist} en el reproductor",
+            "suena la lista de canciones {Playlist} por favor",
+            "abre la lista {Playlist} y reprodúcela"
           ]
         },
         {
@@ -116,7 +116,7 @@
           "name": "AMAZON.HelpIntent",
           "samples": [
             "ayuda",
-            "¿qué puedes hacer?",
+            "qué puedes hacer",
             "cómo te uso",
             "ayúdame a reproducir música"
           ]
