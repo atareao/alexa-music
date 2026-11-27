@@ -1,0 +1,6 @@
+- [x] 1. RED: actualizar el test que exige `invocationName == "reproductor navidrom"` y verificar que falla.
+- [x] 2. GREEN: actualizar `interaction_model.json` y verificar `cargo test` / `cargo check`.
+- [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
+- [x] 4. Renombrar/actualizar docs y `HANDOFF.md` con las nuevas frases.
+- [ ] 5. Verificación externa: re-importar modelo, Build Model, probar en simulador y Echo físico.
+- [ ] 6. Consolidar: marcar tareas, cerrar PR #39 y ejecutar `openspec archive reproductor-navidrom-invocation`.
