@@ -2,7 +2,7 @@
   "interactionModel": {
     "languageModel": {
       "locale": "es-ES",
-      "invocationName": "biblioteca musical",
+      "invocationName": "reproductor navidrom",
       "intents": [
         {
           "name": "PlayMusicIntent",
