@@ -1,0 +1,6 @@
+- [x] 1. RED: actualizar el test que exige `invocationName == "servidor personal"` y verificar que falla.
+- [x] 2. GREEN: actualizar `interaction_model.json` y verificar `cargo test` / `cargo check`.
+- [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
+- [x] 4. Renombrar/actualizar docs y `HANDOFF.md` con las nuevas frases.
+- [ ] 5. Verificación externa: activar Development, habilitar skill, re-importar modelo, Build Model, probar en simulador y Echo, revisar logs.
+- [ ] 6. Consolidar: marcar tareas, cerrar PR #41 y ejecutar `openspec archive servidor-personal-invocation`.
