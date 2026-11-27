@@ -49,6 +49,40 @@
           ]
         },
         {
+          "name": "ListAlbumsIntent",
+          "samples": [
+            "qué álbumes tengo",
+            "qué álbumes hay",
+            "lista mis álbumes",
+            "dime los álbumes",
+            "dime mis álbumes"
+          ]
+        },
+        {
+          "name": "ListArtistsIntent",
+          "samples": [
+            "qué artistas tengo",
+            "qué artistas hay",
+            "lista mis artistas",
+            "dime los artistas",
+            "dime mis artistas"
+          ]
+        },
+        {
+          "name": "ListPlaylistsIntent",
+          "samples": [
+            "qué playlists tengo",
+            "qué listas tengo",
+            "lista mis listas",
+            "dime las listas",
+            "dime mis playlists"
+          ]
+        },
+        {
+          "name": "MoreListingIntent",
+          "samples": ["dime más", "siguientes", "más", "sigue"]
+        },
+        {
           "name": "AMAZON.NextIntent",
           "samples": []
         },
