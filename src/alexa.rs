@@ -656,7 +656,8 @@ pub async fn handle_play_playlist(
         }
     };
 
-    let needle = query.to_lowercase();
+    let search_query = sanitize_search_query(query);
+    let needle = search_query.to_lowercase();
     let Some(playlist) = playlists
         .iter()
         .find(|playlist| playlist.name.to_lowercase().contains(&needle))
