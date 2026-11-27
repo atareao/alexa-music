@@ -7,18 +7,19 @@ Fix de `PlayPlaylistIntent`: el nombre hablado de una playlist con tilde (`clás
 - Logs de co1, 18:00:48Z–18:03:44Z: el Echo Dot sí abría `servidor personal` (`LaunchRequest`) y despachaba `PlayPlaylistIntent`, sin `401`.
 - Tres intentos fallaron con `WARN no playlist matched the spoken name query="clásica"`; la playlist de Navidrome se llama `clasica`.
 - Causa: `src/alexa.rs` comparaba `playlist.name.to_lowercase().contains(&needle)` sin normalizar diacritíticos.
+- **Verificado en Echo el 27-11-2026 18:24:36Z** con `v0.2.1`: `PlayPlaylistIntent` cargó `clasica` (11 canciones), `starting playback` / `playback started`; sin `no playlist matched`, sin `401` y sin panic.
 
 ## Ficheros implicados
 - `src/alexa.rs`: nueva función `normalize_for_playlist_search` y su uso simétrico en `handle_play_playlist`.
 - `src/alexa.rs` (`#[cfg(test)]`): tests `handle_play_playlist_matches_accented_spoken_name` y `handle_play_playlist_matches_accented_stored_name`.
 - `docs/playlist-accent-normalization.md`: este documento.
-- `HANDOFF.md`: estado y verificación pendiente en el Echo.
+- `HANDOFF.md`: estado y verificación en el Echo.
 
 ## Cómo funciona
 Se aplica `to_lowercase()` y se convierten `á é í ó ú ü` en `a e i o u u` tanto al query (tras `sanitize_search_query`) como al nombre de cada playlist. `ñ` se conserva como letra distinta para no confundir `año` con `anio`. La comparación sigue siendo `contains`; el `WARN` original sigue registrando el query hablado sin normalizar.
 
 ## Variables/config
-Sin variables nuevas. No cambian el endpoint HTTPS, `ALEXA_SKILL_ID` ni la imagen desplegada (`v0.2.0`). El cambio requiere redesplegar `alexabridge` porque toca `src/`.
+Sin variables nuevas. No cambian el endpoint HTTPS, `ALEXA_SKILL_ID` ni la imagen desplegada (`v0.2.1`). El cambio requirió redesplegar `alexabridge` porque toca `src/`.
 
 ## Cómo habilitar/desplegar
 1. Hacer merge del PR de `feature/playlist-accent-normalization` a `development`.
@@ -32,6 +33,6 @@ Sin variables nuevas. No cambian el endpoint HTTPS, `ALEXA_SKILL_ID` ni la image
 - No se renombran playlists en Navidrome.
 
 ## Follow-ups
-- Confirmación en Echo físico tras el redespliegue.
-- Cerrar el issue #44 y archivar `PLAN-007` y el change OpenSpec.
-- `PLAN-006` sigue pendiente solo de confirmar «dime más» en el Dot.
+- Verificado en Echo el 27-11-2026 18:24:36Z: `PlayPlaylistIntent`, `starting playback`, sin `no playlist matched` ni `401`; imagen `v0.2.1`.
+- Issue #44 cerrado; `PLAN-007` y el change OpenSpec archivados.
+- `PLAN-006` sigue pendiente solo de confirmar «dime más» en el Dot (con la skill en **Development**).
