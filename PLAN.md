@@ -1,367 +1,598 @@
-# Alexa ↔ Navidrome Bridge — Implementation Plan
-
-## Objetivo
-
-Construir un microservicio en Rust (Axum) que conecte Alexa (ASK) con Navidrome (Subsonic API), permitiendo control por voz de la reproducción musical con cola en memoria por `deviceId`.
-
-## Arquitectura
-
-Binario único sin base de datos externa; estado de reproducción en memoria (`Arc<RwLock<HashMap<String, PlaybackQueue>>>`). Un endpoint `/webhook` recibe payloads de Alexa, valida la firma y despacha a handlers de intents y eventos de `AudioPlayer`. Un cliente Subsonic genera autenticación por petición (salt + token MD5) y fuerza streaming MP3. Despliegue como contenedor con Quadlet + Traefik.
-
-## Tareas
-
-### Tarea 1: Inicialización del proyecto y esqueleto de módulos
-
-**Archivos:**
-- Crear: `Cargo.toml`
-- Crear: `src/main.rs`
-- Crear: `src/config.rs`
-- Crear: `src/subsonic.rs`
-- Crear: `src/alexa.rs`
-- Crear: `src/state.rs`
-
-- [x] **Paso 1:** Crear `Cargo.toml` con dependencias y perfil release.
-      ```toml
-      [package]
-      name = "alexa_navidrome_bridge"
-      version = "0.1.0"
-      edition = "2021"
-
-      [dependencies]
-      axum = "0.7"
-      tokio = { version = "1", features = ["full"] }
-      reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
-      serde = { version = "1", features = ["derive"] }
-      serde_json = "1"
-      md5 = "0.7"
-      rand = "0.8"
-      urlencoding = "2"
-      tracing = "0.1"
-      tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-      async-trait = "0.1"
-      thiserror = "1"
-      ```
-
-- [x] **Paso 2:** Crear módulos vacíos con declaraciones en `src/main.rs`.
-      ```rust
-      mod config;
-      mod subsonic;
-      mod alexa;
-      mod state;
-
-      #[tokio::main]
-      async fn main() {
-          tracing_subscriber::fmt()
-              .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
-              .init();
-          tracing::info!("booting");
-      }
-      ```
-
-- [x] **Paso 3:** Verificar compilación.
-      ```bash
-      cargo check
-      ```
-
-### Tarea 2: Módulo de configuración (`config.rs`)
-
-**Archivos:**
-- Crear/Modificar: `src/config.rs`
-
-- [x] **Paso 1:** Definir `struct Config` con campos `navidrome_url`, `navidrome_user`, `navidrome_password`, `alexa_skill_id: Option<String>`, `port: u16`, `skip_signature_verification: bool`, y `fn from_env() -> Result<Self, ConfigError>`.
-      ```rust
-      #[derive(Debug, Clone)]
-      pub struct Config {
-          pub navidrome_url: String,
-          pub navidrome_user: String,
-          pub navidrome_password: String,
-          pub alexa_skill_id: Option<String>,
-          pub port: u16,
-          pub skip_signature_verification: bool,
-      }
-
-      impl Config {
-          pub fn from_env() -> Result<Self, ConfigError> {
-              Ok(Self {
-                  navidrome_url: std::env::var("NAVIDROME_URL").map_err(|_| ConfigError::Missing("NAVIDROME_URL"))?,
-                  navidrome_user: std::env::var("NAVIDROME_USER").map_err(|_| ConfigError::Missing("NAVIDROME_USER"))?,
-                  navidrome_password: std::env::var("NAVIDROME_PASSWORD").map_err(|_| ConfigError::Missing("NAVIDROME_PASSWORD"))?,
-                  alexa_skill_id: std::env::var("ALEXA_SKILL_ID").ok(),
-                  port: std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3000),
-                  skip_signature_verification: std::env::var("SKIP_SIGNATURE_VERIFICATION")
-                      .map(|v| v == "true").unwrap_or(false),
-              })
-          }
-      }
-      ```
-
-- [x] **Paso 2:** Añadir `enum ConfigError { Missing(&'static str) }` con `impl Display + Error`.
-      ```rust
-      #[derive(Debug, thiserror::Error)]
-      pub enum ConfigError { #[error("missing env var: {0}")] Missing(&'static str) }
-      ```
-
-- [x] **Paso 3:** Test unitario de `from_env` con variables inyectadas.
-      ```rust
-      #[cfg(test)]
-      mod tests {
-          use super::*;
-          #[test]
-          fn defaults_applied() {
-              std::env::set_var("NAVIDROME_URL", "https://n.example");
-              std::env::set_var("NAVIDROME_USER", "u");
-              std::env::set_var("NAVIDROME_PASSWORD", "p");
-              let c = Config::from_env().unwrap();
-              assert_eq!(c.port, 3000);
-              assert!(!c.skip_signature_verification);
-          }
-      }
-      ```
-
-### Tarea 3: Cliente Subsonic (`subsonic.rs`)
-
-**Archivos:**
-- Crear/Modificar: `src/subsonic.rs`
-
-- [x] **Paso 1:** Implementar generación de auth params por petición (salt alfanumérico de 8 chars, token MD5).
-      ```rust
-      use rand::Rng;
-      const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-      pub fn auth_params(user: &str, password: &str) -> (String, String) {
-          let salt: String = (0..8).map(|_| {
-              let mut rng = rand::thread_rng();
-              CHARS[rng.gen_range(0..CHARS.len())] as char
-          }).collect();
-          let token = format!("{:x}", md5::compute(format!("{password}{salt}")));
-          (salt, token)
-      }
-      ```
-
-- [x] **Paso 2:** Definir `struct SubsonicClient { base: String, user: String, password: String }` y `fn base_query(&self) -> String`.
-      ```rust
-      pub struct SubsonicClient { base: String, user: String, password: String }
-
-      impl SubsonicClient {
-          pub fn base_query(&self) -> String {
-              let (salt, token) = auth_params(&self.user, &self.password);
-              format!("u={}&t={}&s={}&v=1.16.1&c=alexa_navidrome_bridge&f=json",
-                  self.user, token, salt)
-          }
-          pub fn stream_url(&self, song_id: &str) -> String {
-              format!("{}/rest/stream?{}&id={}&format=mp3",
-                  self.base, self.base_query(), urlencoding::encode(song_id))
-          }
-      }
-      ```
-
-- [x] **Paso 3:** Implementar métodos async `search3`, `get_playlists`, `get_playlist`, `get_album`, `get_artist` que llaman a `{base}/rest/<method>?<query>` vía `reqwest` y deserializan JSON a tipos de dominio (Song, Album, Artist, Playlist).
-
-- [x] **Paso 4:** Test de auth (token determinista con salt fijo) y de construcción de `stream_url`.
-      ```rust
-      #[test]
-      fn token_is_md5_of_password_salt() {
-          // salt fijo inyectado para determinismo
-          let expected = format!("{:x}", md5::compute("secretABCD1234"));
-          assert_eq!(expected.len(), 32);
-      }
-      ```
-
-### Tarea 4: Gestión de estado (`state.rs`)
-
-**Archivos:**
-- Crear/Modificar: `src/state.rs`
-
-- [x] **Paso 1:** Definir tipos de cola y estado.
-      ```rust
-      use std::collections::HashMap;
-      use std::sync::{Arc, RwLock};
-
-      #[derive(Clone)]
-      pub struct PlaybackQueue {
-          pub tracks: Vec<String>,      // song ids
-          pub index: usize,
-          pub token: Option<String>,    // audioPlayer token actual
-          pub offset_ms: i64,
-          pub shuffled: bool,
-          pub original_order: Vec<String>,
-      }
-
-      pub type AppState = Arc<RwLock<HashMap<String, PlaybackQueue>>>;
-      ```
-
-- [x] **Paso 2:** Implementar helpers `get_or_create`, `advance`, `retreat`, `shuffle_remaining`, `restore_order`, `save_offset`.
-      ```rust
-      impl PlaybackQueue {
-          pub fn advance(&mut self) -> Option<String> {
-              if self.index + 1 < self.tracks.len() { self.index += 1; Some(self.tracks[self.index].clone()) } else { None }
-          }
-          pub fn retreat(&mut self) -> Option<String> {
-              if self.index > 0 { self.index -= 1; Some(self.tracks[self.index].clone()) } else { None }
-          }
-      }
-      ```
-
-- [x] **Paso 3:** Tests de advance/retreat/shuffle/restore con vectores de ejemplo.
-
-### Tarea 5: Tipos de request/response de Alexa (`alexa.rs`)
-
-**Archivos:**
-- Crear/Modificar: `src/alexa.rs`
-
-- [x] **Paso 1:** Definir structs de request con `serde` (Request envelope, `request.type` tag, `intent`, `slots`, `audioPlayer`, `context.System.device.deviceId`, `session`).
-      ```rust
-      #[derive(Deserialize)]
-      pub struct AlexaRequest {
-          pub version: String,
-          pub session: Option<Session>,
-          pub context: Option<Context>,
-          pub request: RequestBody,
-      }
-      #[derive(Deserialize)]
-      #[serde(tag = "type")]
-      pub enum RequestBody {
-          LaunchRequest,
-          IntentRequest { intent: Intent },
-          SessionEndedRequest,
-          #[serde(rename = "AudioPlayer.PlaybackStarted")] PlaybackStarted(AudioPlayerEvent),
-          #[serde(rename = "AudioPlayer.PlaybackNearlyFinished")] PlaybackNearlyFinished(AudioPlayerEvent),
-          #[serde(rename = "AudioPlayer.PlaybackStopped")] PlaybackStopped(AudioPlayerEvent),
-          #[serde(rename = "AudioPlayer.PlaybackFinished")] PlaybackFinished(AudioPlayerEvent),
-          #[serde(rename = "AudioPlayer.PlaybackFailed")] PlaybackFailed(AudioPlayerEvent),
-      }
-      ```
-
-- [x] **Paso 2:** Definir structs de response (`ResponseBody` con `outputSpeech`, `reprompt`, `shouldEndSession`, `directives`) y helpers `speak()`, `audio_player_play()`, `audio_player_stop()`, `empty()`.
-
-- [x] **Paso 3:** Tests de (de)serialización con payloads Alexa reales (LaunchRequest, PlayMusicIntent, PlaybackNearlyFinished).
-
-### Tarea 6: Handlers de intents (`alexa.rs`)
-
-**Archivos:**
-- Modificar: `src/alexa.rs`
-
-- [x] **Paso 1:** Implementar `handle_launch` → mensaje de bienvenida en español, `shouldEndSession=false`.
-- [x] **Paso 2:** Implementar `handle_play_music` (slot `Query`/`AMAZON.SearchQuery`): `search3`, priorizar songs → albums → artists, cargar cola, reproducir primer track con `AudioPlayer.Play` REPLACE_ALL.
-- [x] **Paso 3:** Implementar `handle_play_playlist` (slot `Playlist`): `getPlaylists`, match por nombre, `getPlaylist`, cargar cola, reproducir primero.
-- [x] **Paso 4:** Implementar `AMAZON.NextIntent` (advance + play/stop), `AMAZON.PreviousIntent` (retreat + play).
-- [x] **Paso 5:** Implementar `AMAZON.PauseIntent`/`StopIntent`/`CancelIntent` → `AudioPlayer.Stop`.
-- [x] **Paso 6:** Implementar `AMAZON.ResumeIntent` → reanudar desde offset/token guardado.
-- [x] **Paso 7:** Implementar `AMAZON.ShuffleOnIntent`/`ShuffleOffIntent` → shuffle/restaurar cola restante.
-- [x] **Paso 8:** Tests por intent con payloads de ejemplo y aserciones sobre directivas generadas.
-
-### Tarea 7: Handlers de eventos AudioPlayer (`alexa.rs`)
-
-**Archivos:**
-- Modificar: `src/alexa.rs`
-
-- [x] **Paso 1:** `PlaybackNearlyFinished` → encolar siguiente con `ENQUEUE` y `expectedPreviousToken`.
-- [x] **Paso 2:** `PlaybackStopped` → guardar offset/token para resume.
-- [x] **Paso 3:** `PlaybackStarted`/`PlaybackFinished`/`PlaybackFailed` → solo log, respuesta vacía.
-- [x] **Paso 4:** `SessionEndedRequest` → 200 OK vacío.
-- [x] **Paso 5:** Tests de cada evento (directiva ENQUEUE presente, respuesta vacía en el resto).
-
-### Tarea 8: Middleware de verificación de firma (`alexa.rs` o `middleware.rs`)
-
-**Archivos:**
-- Crear: `src/middleware.rs`
-- Modificar: `src/main.rs`
-
-- [x] **Paso 1:** Implementar extractor/middleware que valida headers `SignatureCertChainUrl` y `Signature`.
-- [x] **Paso 2:** Validar URL del certificado: scheme https, host `s3.amazonaws.com`, path empieza por `/echo.api/`.
-- [x] **Paso 3:** Saltar verificación criptográfica si `SKIP_SIGNATURE_VERIFICATION=true` (manteniendo checks de presencia/formato).
-- [x] **Paso 4:** Tests de rechazo (URL inválida, headers ausentes) y aceptación con skip activado.
-
-### Tarea 9: Endpoint `/webhook`
-
-**Archivos:**
-- Crear/Modificar: `src/main.rs`
-
-- [x] **Paso 1:** Definir handler `POST /webhook` protegido por el middleware de firma, que deserializa `AlexaRequest` y despacha según tipo.
-- [x] **Paso 2:** Validar `applicationId` contra `ALEXA_SKILL_ID` si está configurado.
-- [x] **Paso 3:** Devolver `Json<ResponseBody>` o respuesta vacía según corresponda.
-- [x] **Paso 4:** Test de integración: POST de un LaunchRequest → 200 con outputSpeech en español.
-
-### Tarea 10: Endpoint `/health`
-
-**Archivos:**
-- Crear/Modificar: `src/main.rs`
-
-- [x] **Paso 1:** Handler `GET /health` → `200` con `{"status":"ok"}` (exento de verificación de firma).
-- [x] **Paso 2:** Test de integración del healthcheck.
-
-### Tarea 11: Cableado principal (`main.rs`)
-
-**Archivos:**
-- Modificar: `src/main.rs`
-
-- [x] **Paso 1:** Cargar `Config::from_env()` (abortar con error claro si faltan obligatorias).
-- [x] **Paso 2:** Construir `SubsonicClient`, `AppState` y `Router` con rutas `/health` y `/webhook`.
-- [x] **Paso 3:** Enlazar `TcpListener` en `0.0.0.0:{port}` y servir con `axum::serve`.
-- [x] **Paso 4:** Verificar arranque local con `cargo run` y `curl /health`.
-
-### Tarea 12: Suite de tests
-
-**Archivos:**
-- Crear: `tests/webhook_test.rs`
-- Crear: `tests/subsonic_test.rs`
-
-- [x] **Paso 1:** Tests de integración con payloads Alexa reales (Launch, PlayMusic, Next, Pause, AudioPlayer events).
-- [x] **Paso 2:** Mock de respuestas Subsonic (servidor HTTP de test o trait inyectable) para `search3`/`getPlaylist`.
-- [x] **Paso 3:** Ejecutar `cargo test` y `cargo clippy -- -D warnings` y `cargo fmt --check` en verde.
-
-### Tarea 13: Containerfile multi-stage
-
-**Archivos:**
-- Crear: `Containerfile`
-
-- [x] **Paso 1:** Etapa builder `rust:alpine` compilando release.
-- [x] **Paso 2:** Etapa runtime `alpine`/distroless, usuario UID 1000, copiar binario.
-- [x] **Paso 3:** `EXPOSE 3000`, `ENTRYPOINT` al binario.
-      ```dockerfile
-      FROM rust:alpine AS builder
-      WORKDIR /app
-      COPY . .
-      RUN cargo build --release
-
-      FROM alpine:3.20
-      RUN adduser -D -u 1000 app
-      COPY --from=builder /app/target/release/alexa_navidrome_bridge /usr/local/bin/
-      USER 1000
-      EXPOSE 3000
-      ENTRYPOINT ["alexa_navidrome_bridge"]
-      ```
-
-### Tarea 14: Podman Quadlet (`alexabridge.container`)
-
-**Archivos:**
-- Crear: `alexabridge.container`
-
-- [x] **Paso 1:** Definir `[Container]` con `Image`, `EnvironmentFile`, `PublishPort` interno, labels de Traefik.
-- [x] **Paso 2:** Definir `[Service]` restart y `[Install]`.
-      ```ini
-      [Unit]
-      Description=Alexa Navidrome Bridge
-
-      [Container]
-      Image=localhost/alexa_navidrome_bridge:latest
-      EnvironmentFile=/etc/alexabridge.env
-      Label=traefik.enable=true
-      Label=traefik.http.routers.alexabridge.rule=Host(`alexa.example.com`)
-      Label=traefik.http.services.alexabridge.loadbalancer.server.port=3000
-
-      [Service]
-      Restart=always
-
-      [Install]
-      WantedBy=multi-user.target
-      ```
-
-### Tarea 15: Modelo de interacción Alexa (`interaction_model.json`)
-
-**Archivos:**
-- Crear: `interaction_model.json`
-
-- [x] **Paso 1:** Definir `languageModel` `es-ES` con intents `PlayMusicIntent` (slot `Query` tipo `AMAZON.SearchQuery`), `PlayPlaylistIntent` (slot `Playlist` tipo `AMAZON.USState`/custom), más intents estándar (`AMAZON.NextIntent`, `PreviousIntent`, `PauseIntent`, `StopIntent`, `CancelIntent`, `ResumeIntent`, `ShuffleOnIntent`, `ShuffleOffIntent`, `HelpIntent`, `FallbackIntent`).
-- [x] **Paso 2:** Añadir utterances de ejemplo en español para cada intent.
-- [x] **Paso 3:** Validar JSON (`jq . interaction_model.json`).
+# List Library Intents Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Añadir intents de Alexa para listar álbumes, artistas y playlists de Navidrome, con paginación mediante “dime más”.
+
+**Architecture:** Se añaden dos métodos de solo lectura al cliente Subsonic (`getAlbumList2`, `getArtists`) y se reutiliza `getPlaylists`. Los handlers convierten los resultados en texto y guardan un `ListingCursor` en `sessionAttributes` de Alexa, evitando estado nuevo en el servidor. La paginación se implementa con un intent `MoreListingIntent` que lee el cursor de la sesión y devuelve la siguiente página.
+
+**Tech Stack:** Rust 1.88, Axum 0.7, Tokio 1, reqwest 0.12, serde/serde_json 1, tracing 0.1, Alexa Custom Skill es-ES, Subsonic API v1.16.1 / OpenSubsonic.
+
+## Global Constraints
+
+- Issue de entrada: #31 (`✨ feat: intents para listar álbumes, artistas y playlists`).
+- No añadir base de datos ni almacenamiento externo; la paginación vive en `sessionAttributes` de Alexa.
+- No modificar la verificación RSA ni el endpoint `/webhook`.
+- No añadir `samples` a intents `AMAZON.*` en `interaction_model.json`.
+- No poner `supportedInterfaces` en `interaction_model.json`; Audio Player se activa en la consola de Alexa.
+- Mantener `SKIP_SIGNATURE_VERIFICATION=false` en producción.
+- Todos los cambios van por rama `feature/*` desde `development`, con commits gitmoji y PR a `development` y luego a `main`.
+- Verificación obligatoria: `cargo test --quiet`, `cargo check`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt -- --check`.
+
+---
+
+## File Structure
+
+- Modify `src/subsonic.rs`: nuevos structs de respuesta y métodos `get_album_list`, `get_artists`.
+- Modify `src/alexa.rs`: `Session.attributes`, `AlexaResponse.sessionAttributes`, `ListingCursor`, helpers de paginación y handlers de intents.
+- Modify `interaction_model.json`: nuevos intents y samples.
+- Test `src/subsonic.rs`, `src/alexa.rs`, `tests/webhook_test.rs`: tests TDD de deserialización, handlers y modelo.
+- Modify `docs/alexa-signature-playlists.md`: documentar los nuevos intents.
+
+---
+
+## Task 1: Subsonic `getAlbumList2`
+
+**Files:**
+- Modify: `src/subsonic.rs`
+- Test: `src/subsonic.rs` (`#[cfg(test)]`)
+
+**Interfaces:**
+- Consumes: `endpoint_url(&self, method: &str, extra: &str) -> String`, `get_json`, `ensure_ok`, `Album`.
+- Produces: `pub async fn get_album_list(&self, size: usize, offset: usize) -> Result<Vec<Album>, SubsonicError>`.
+
+- [ ] **Step 1: Write the failing test**
+
+Añadir en `src/subsonic.rs`:
+
+```rust
+#[test]
+fn get_album_list_reads_alphabetical_albums() {
+    let (_base, handle) = start_mock(HashMap::from([(
+        "getAlbumList2",
+        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","albumList2":{"album":[{"id":"a1","name":"Álbum Uno","artist":"Artista A"},{"id":"a2","name":"Álbum Dos","artist":"Artista B"}]}}}"#,
+    )]));
+    let client = SubsonicClient::new(_base, "user".into(), "secret".into());
+    let albums = tokio_test::block_on(client.get_album_list(10, 0)).unwrap();
+    assert_eq!(albums.len(), 2);
+    assert_eq!(albums[0].name, "Álbum Uno");
+    handle.abort();
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test --quiet get_album_list_reads_alphabetical_albums`
+
+Expected: FAIL because `get_album_list` no existe.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Añadir structs y campo en `src/subsonic.rs`:
+
+```rust
+#[derive(Debug, Deserialize)]
+struct AlbumList2Body {
+    #[serde(rename = "albumList2", default)]
+    album_list2: AlbumList2,
+}
+
+#[derive(Debug, Deserialize)]
+struct AlbumList2 {
+    #[serde(default)]
+    album: Vec<Album>,
+}
+```
+
+Añadir a `ResponseBody`:
+
+```rust
+#[serde(default)]
+pub albumList2: Option<AlbumList2Body>,
+```
+
+Añadir método:
+
+```rust
+pub async fn get_album_list(
+    &self,
+    size: usize,
+    offset: usize,
+) -> Result<Vec<Album>, SubsonicError> {
+    let extra = format!("type=alphabeticalByName&size={size}&offset={offset}");
+    let url = self.endpoint_url("getAlbumList2", &extra);
+    let body = self.get_json(&url).await?.subsonic_response;
+    ensure_ok(&body)?;
+    Ok(body
+        .albumList2
+        .ok_or(SubsonicError::MissingField("albumList2"))?
+        .album_list2
+        .album)
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cargo test --quiet get_album_list_reads_alphabetical_albums`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/subsonic.rs
+git commit -m "✨ feat: add getAlbumList2 Subsonic client"
+```
+
+---
+
+## Task 2: Subsonic `getArtists`
+
+**Files:**
+- Modify: `src/subsonic.rs`
+- Test: `src/subsonic.rs`
+
+**Interfaces:**
+- Consumes: `endpoint_url`, `get_json`, `ensure_ok`, `Artist`.
+- Produces: `pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError>`.
+
+- [ ] **Step 1: Write the failing test**
+
+```rust
+#[test]
+fn get_artists_flattens_index_entries() {
+    let (_base, handle) = start_mock(HashMap::from([(
+        "getArtists",
+        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[{"artist":[{"id":"ar1","name":"Vivaldi"}]},{"artist":[{"id":"ar2","name":"Bach"}]}]}}}"#,
+    )]));
+    let client = SubsonicClient::new(_base, "user".into(), "secret".into());
+    let artists = tokio_test::block_on(client.get_artists()).unwrap();
+    assert_eq!(artists.len(), 2);
+    assert_eq!(artists[1].name, "Bach");
+    handle.abort();
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test --quiet get_artists_flattens_index_entries`
+
+Expected: FAIL because `get_artists` no existe.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```rust
+#[derive(Debug, Deserialize)]
+struct ArtistsBody {
+    #[serde(default)]
+    index: Vec<ArtistIndex>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtistIndex {
+    #[serde(default)]
+    artist: Vec<Artist>,
+}
+```
+
+Añadir a `ResponseBody`:
+
+```rust
+#[serde(default)]
+pub artists: Option<ArtistsBody>,
+```
+
+Añadir método:
+
+```rust
+pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
+    let url = self.endpoint_url("getArtists", "");
+    let body = self.get_json(&url).await?.subsonic_response;
+    ensure_ok(&body)?;
+    let artists = body.artists.ok_or(SubsonicError::MissingField("artists"))?;
+    Ok(artists.index.into_iter().flat_map(|index| index.artist).collect())
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cargo test --quiet get_artists_flattens_index_entries`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/subsonic.rs
+git commit -m "✨ feat: add getArtists Subsonic client"
+```
+
+---
+
+## Task 3: Session cursor and speech helper
+
+**Files:**
+- Modify: `src/alexa.rs`
+- Test: `src/alexa.rs`
+
+**Interfaces:**
+- Consumes: `AlexaRequest`, `Session`, `AlexaResponse`, `ResponseBody`, `OutputSpeech`.
+- Produces: `ListingCursor`, `speak_with_session`, `cursor_from_request`, `render_page`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```rust
+#[test]
+fn session_attributes_are_deserialized() {
+    let payload = json!({
+        "version": "1.0",
+        "session": {"attributes": {"listing": {"kind":"albums","items":["A"],"offset":1}}},
+        "request": {"type":"LaunchRequest","requestId":"r","timestamp":"2026-01-01T00:00:00Z","locale":"es-ES"}
+    });
+    let req: AlexaRequest = serde_json::from_value(payload).unwrap();
+    assert!(req.session.unwrap().attributes.contains_key("listing"));
+}
+
+#[test]
+fn speak_with_session_serializes_cursor() {
+    let cursor = ListingCursor { kind: "albums".into(), items: vec!["A".into()], offset: 1 };
+    let value = serde_json::to_value(speak_with_session("Tienes álbumes.", &cursor)).unwrap();
+    assert_eq!(value["sessionAttributes"]["listing"]["kind"], "albums");
+    assert_eq!(value["response"]["shouldEndSession"], false);
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cargo test --quiet session_attributes_are_deserialized speak_with_session_serializes_cursor`
+
+Expected: FAIL because fields/helpers no existen.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```rust
+use serde_json::Value;
+
+#[allow(non_snake_case)]
+#[derive(Debug, Deserialize)]
+pub struct Session {
+    #[serde(default)]
+    pub sessionId: Option<String>,
+    #[serde(default)]
+    pub application: Option<Application>,
+    #[serde(default)]
+    pub user: Option<User>,
+    #[serde(default)]
+    pub attributes: HashMap<String, Value>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize)]
+pub struct AlexaResponse {
+    pub version: String,
+    pub response: Option<ResponseBody>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sessionAttributes: Option<HashMap<String, Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListingCursor {
+    pub kind: String,
+    pub items: Vec<String>,
+    pub offset: usize,
+}
+
+pub fn speak_with_session(text: &str, cursor: &ListingCursor) -> AlexaResponse {
+    let mut attributes = HashMap::new();
+    if let Ok(value) = serde_json::to_value(cursor) {
+        attributes.insert("listing".to_owned(), value);
+    }
+    AlexaResponse {
+        version: "1.0".to_owned(),
+        response: Some(ResponseBody {
+            outputSpeech: Some(OutputSpeech {
+                speech_type: "PlainText".to_owned(),
+                text: text.to_owned(),
+            }),
+            shouldEndSession: Some(false),
+            ..ResponseBody::default()
+        }),
+        sessionAttributes: Some(attributes),
+    }
+}
+
+fn cursor_from_request(req: &AlexaRequest) -> Option<ListingCursor> {
+    let value = req.session.as_ref()?.attributes.get("listing")?;
+    serde_json::from_value(value.clone()).ok()
+}
+
+const PAGE_SIZE: usize = 10;
+
+fn render_page(mut cursor: ListingCursor) -> (String, ListingCursor) {
+    let label = match cursor.kind.as_str() {
+        "albums" => "álbumes",
+        "artists" => "artistas",
+        "playlists" => "listas",
+        _ => "resultados",
+    };
+    if cursor.offset >= cursor.items.len() {
+        return (format!("No hay más {label}."), cursor);
+    }
+    let end = (cursor.offset + PAGE_SIZE).min(cursor.items.len());
+    let page = &cursor.items[cursor.offset..end];
+    let text = format!("Tienes estos {label}: {}.", page.join("; "));
+    cursor.offset = end;
+    (text, cursor)
+}
+```
+
+Actualiza todos los constructores existentes de `AlexaResponse` para incluir `sessionAttributes: None`.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cargo test --quiet session_attributes_are_deserialized speak_with_session_serializes_cursor`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/alexa.rs
+git commit -m "✨ feat: add Alexa session cursor for listings"
+```
+
+---
+
+## Task 4: Listing handlers and dispatch
+
+**Files:**
+- Modify: `src/alexa.rs`
+- Test: `src/alexa.rs`
+
+**Interfaces:**
+- Consumes: `SubsonicClient`, `ListingCursor`, `speak_with_session`, `cursor_from_request`, `render_page`.
+- Produces: `handle_list_albums`, `handle_list_artists`, `handle_list_playlists`, `handle_more_listing`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```rust
+#[tokio::test]
+async fn list_albums_returns_names_and_cursor() {
+    let server = MockServer::start(vec![(
+        "getAlbumList2",
+        json!({"subsonic-response":{"status":"ok","version":"1.16.1","albumList2":{"album":[{"id":"a1","name":"Uno"},{"id":"a2","name":"Dos"}]}}}),
+    )]);
+    let response = handle_list_albums(&server.client()).await;
+    let value = serde_json::to_value(response).unwrap();
+    assert_eq!(value["sessionAttributes"]["listing"]["kind"], "albums");
+    assert_eq!(value["response"]["outputSpeech"]["text"], "Tienes estos álbumes: Uno; Dos.");
+}
+
+#[tokio::test]
+async fn more_listing_uses_session_cursor() {
+    let payload = json!({
+        "version":"1.0",
+        "session":{"attributes":{"listing":{"kind":"albums","items":["Uno","Dos"],"offset":1}}},
+        "request":{"type":"IntentRequest","requestId":"r","timestamp":"2026-01-01T00:00:00Z","locale":"es-ES","intent":{"name":"MoreListingIntent"}}
+    });
+    let req: AlexaRequest = serde_json::from_value(payload).unwrap();
+    let response = handle_more_listing(&req);
+    let value = serde_json::to_value(response).unwrap();
+    assert_eq!(value["response"]["outputSpeech"]["text"], "Tienes estos álbumes: Dos.");
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cargo test --quiet list_albums_returns_names_and_cursor more_listing_uses_session_cursor`
+
+Expected: FAIL because handlers no existen.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```rust
+pub async fn handle_list_albums(client: &SubsonicClient) -> AlexaResponse {
+    match client.get_album_list(500, 0).await {
+        Ok(albums) if albums.is_empty() => speak("No tengo álbumes en la biblioteca.", true),
+        Ok(albums) => {
+            let items = albums.into_iter().map(|album| album.name).collect();
+            let cursor = ListingCursor { kind: "albums".into(), items, offset: 0 };
+            let (text, next) = render_page(cursor);
+            speak_with_session(&text, &next)
+        }
+        Err(err) => {
+            error!(error = %err, "getAlbumList2 failed");
+            speak("No he podido consultar tus álbumes.", true)
+        }
+    }
+}
+
+pub async fn handle_list_artists(client: &SubsonicClient) -> AlexaResponse {
+    match client.get_artists().await {
+        Ok(artists) if artists.is_empty() => speak("No tengo artistas en la biblioteca.", true),
+        Ok(artists) => {
+            let items = artists.into_iter().map(|artist| artist.name).collect();
+            let cursor = ListingCursor { kind: "artists".into(), items, offset: 0 };
+            let (text, next) = render_page(cursor);
+            speak_with_session(&text, &next)
+        }
+        Err(err) => {
+            error!(error = %err, "getArtists failed");
+            speak("No he podido consultar tus artistas.", true)
+        }
+    }
+}
+
+pub async fn handle_list_playlists(client: &SubsonicClient) -> AlexaResponse {
+    match client.get_playlists().await {
+        Ok(playlists) if playlists.is_empty() => speak("No tengo listas de reproducción.", true),
+        Ok(playlists) => {
+            let items = playlists.into_iter().map(|playlist| playlist.name).collect();
+            let cursor = ListingCursor { kind: "playlists".into(), items, offset: 0 };
+            let (text, next) = render_page(cursor);
+            speak_with_session(&text, &next)
+        }
+        Err(err) => {
+            error!(error = %err, "getPlaylists failed");
+            speak("No he podido consultar tus listas.", true)
+        }
+    }
+}
+
+pub fn handle_more_listing(req: &AlexaRequest) -> AlexaResponse {
+    let Some(cursor) = cursor_from_request(req) else {
+        return speak("Dime primero qué quieres listar.", true);
+    };
+    let (text, next) = render_page(cursor);
+    speak_with_session(&text, &next)
+}
+```
+
+Añadir brazos en el `match intent.name.as_str()` de `handle_request`:
+
+```rust
+"ListAlbumsIntent" => handle_list_albums(client).await,
+"ListArtistsIntent" => handle_list_artists(client).await,
+"ListPlaylistsIntent" => handle_list_playlists(client).await,
+"MoreListingIntent" => handle_more_listing(req),
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cargo test --quiet`
+
+Expected: ALL PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/alexa.rs
+git commit -m "✨ feat: add library listing intents"
+```
+
+---
+
+## Task 5: Interaction model
+
+**Files:**
+- Modify: `interaction_model.json`
+- Test: `tests/webhook_test.rs` or a small Python validation command.
+
+**Interfaces:**
+- Consumes: existing `languageModel.intents` array.
+- Produces: intents `ListAlbumsIntent`, `ListArtistsIntent`, `ListPlaylistsIntent`, `MoreListingIntent`.
+
+- [ ] **Step 1: Write the failing test**
+
+Añadir test que lea `interaction_model.json` y verifique que existen los cuatro intents y que ningún `AMAZON.*` tiene samples.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test --quiet model_declares_listing_intents`
+
+Expected: FAIL.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Añadir al array `intents`:
+
+```json
+{
+  "name": "ListAlbumsIntent",
+  "samples": [
+    "qué álbumes tengo",
+    "qué álbumes hay",
+    "lista mis álbumes",
+    "dime los álbumes",
+    "dime mis álbumes"
+  ]
+},
+{
+  "name": "ListArtistsIntent",
+  "samples": [
+    "qué artistas tengo",
+    "qué artistas hay",
+    "lista mis artistas",
+    "dime los artistas",
+    "dime mis artistas"
+  ]
+},
+{
+  "name": "ListPlaylistsIntent",
+  "samples": [
+    "qué playlists tengo",
+    "qué listas tengo",
+    "lista mis listas",
+    "dime las listas",
+    "dime mis playlists"
+  ]
+},
+{
+  "name": "MoreListingIntent",
+  "samples": [
+    "dime más",
+    "siguientes",
+    "más",
+    "sigue"
+  ]
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cargo test --quiet model_declares_listing_intents`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add interaction_model.json tests/webhook_test.rs
+git commit -m "✨ feat: declare library listing intents"
+```
+
+---
+
+## Task 6: Docs, release and deploy
+
+**Files:**
+- Modify: `docs/alexa-signature-playlists.md`
+- Modify: `HANDOFF.md`
+
+**Interfaces:**
+- Consumes: all previous tasks.
+- Produces: release `v0.2.0` with image `ghcr.io/atareao/alexa-music:v0.2.0`.
+
+- [ ] **Step 1: Update docs**
+
+Documentar los nuevos intents, ejemplos de voz, paginación y los métodos Subsonic añadidos.
+
+- [ ] **Step 2: Verify**
+
+Run:
+
+```bash
+cargo test --quiet
+cargo check
+cargo clippy --all-targets -- -D warnings
+cargo fmt -- --check
+```
+
+Expected: ALL OK.
+
+- [ ] **Step 3: Commit docs**
+
+```bash
+git add docs/alexa-signature-playlists.md HANDOFF.md
+git commit -m "📝 docs: document library listing intents"
+```
+
+- [ ] **Step 4: Merge and release**
+
+PR a `development`, PR a `main`, tag `v0.2.0`, GitHub Release.
+
+- [ ] **Step 5: Deploy**
+
+Actualizar `compose.yaml` en co1 a `v0.2.0`, recrear solo `alexabridge`, verificar `/health` y logs. Re-importar `interaction_model.json` en la consola de Alexa y hacer *Build Model*.
+
+---
