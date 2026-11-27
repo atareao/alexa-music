@@ -15,6 +15,8 @@
 - [x] `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
 
 ## DEPLOY
-- [ ] Publicar imagen `v0.1.1` en GHCR vía tag + GitHub Release.
-- [ ] Actualizar el stack de co1 a `v0.1.1` y recrear solo `alexabridge`.
-- [ ] Verificar con Alexa real: sin 401, `starting playback` en logs.
+- [x] Publicar imagen `v0.1.1` en GHCR vía tag + GitHub Release.
+- [x] Actualizar el stack de co1 a `v0.1.1` y recrear solo `alexabridge`.
+- [x] Verificar con Alexa real: sin 401, `starting playback` en logs.
+
+Nota: Superado por v0.2.1: firma verificada con webhook 401 sin cabecera y sin 401 en tráfico Alexa real; PR #43/#45 y despliegue 27-11-2026.
