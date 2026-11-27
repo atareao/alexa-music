@@ -12,8 +12,8 @@ Desplegar el puente Alexa↔Navidrome en el servidor `co1` (Contabo, Docker + Do
 - Navidrome: contenedor `navidrome`, red `proxy`, FQDN `musica.territoriolinux.es`.
 - Traefik: entrypoint `https`, certResolver `myresolver`, red externa `proxy`.
 - FQDN elegido: `alexa.territoriolinux.es` → resuelve a `167.86.73.171`.
-- `co1` puede hacer pull de `ghcr.io/atareao/alexa-music:v0.1.0` (manifest OK).
-- Modo prueba: `SKIP_SIGNATURE_VERIFICATION=true` (firma real se validará después con skill Alexa).
+- Imagen inicial: `ghcr.io/atareao/alexa-music:v0.1.0`. Imagen final desplegada: `ghcr.io/atareao/alexa-music:v0.1.9`.
+- Modo inicial de prueba: `SKIP_SIGNATURE_VERIFICATION=true`. Estado final: `SKIP_SIGNATURE_VERIFICATION=false` y `ALEXA_SKILL_ID` configurado (firma real activada).
 - Credenciales Navidrome: las proporciona el usuario en el `.env` del stack.
 
 ## Arquitectura
@@ -52,6 +52,7 @@ Internet HTTPS (Traefik :443, myresolver)
 ### Tarea 5: Cierre
 - [x] Paso 1: Documentar en `docs/deploy-co1.md` los datos del despliegue y cómo reprobar.
 - [x] Paso 2: Marcar este plan completado y actualizar HANDOFF.
+- [x] Paso 3: Desplegar las correcciones de firma, Audio Player, sanitización y playlists hasta `v0.1.9`, e importar el modelo corregido en Alexa (issue #16).
 
 ## Criterios de aceptación
 - Contenedor `alexabridge` corriendo en co1.
@@ -59,7 +60,11 @@ Internet HTTPS (Traefik :443, myresolver)
 - Búsqueda real contra Navidrome devuelve stream MP3.
 
 ## Estado final
-- Desplegado en co1 dentro del stack `navidrome` (Dockge), contenedor `alexabridge`, imagen `ghcr.io/atareao/alexa-music:v0.1.0`.
-- Verificado: `/health` 200 por HTTPS, `/webhook` 401 sin headers, LaunchRequest 200 en español, PlayMusicIntent con búsqueda real → `AudioPlayer.Play` con stream `audio/mpeg` (ID3/MP3).
+- **COMPLETADO.** Desplegado en co1 dentro del stack `navidrome` (Dockge), contenedor `alexabridge`, imagen final `ghcr.io/atareao/alexa-music:v0.1.9`. `navidrome` sigue Up y no fue reiniciado.
+- Verificado: `/health` 200 por HTTPS con `{"status":"ok"}`, `/webhook` 401 sin headers de firma, `PlayMusicIntent` con búsqueda real → `AudioPlayer.Play` con stream MP3.
+- Verificación final con skill real: `dispatching Alexa request intent=Some("PlayPlaylistIntent")`, `loading playlist tracks playlist=clasica song_count=Some(11)`, `starting playback track_id=6tat8goav82QFNlVTIs7ng`, `playback started token=track-6tat8goav82QFNlVTIs7ng error=None`; simulador: `Reproduciendo la lista clasica.`
 - FQDN: https://alexa.territoriolinux.es · Navidrome: https://musica.territoriolinux.es.
-- Modo actual: `SKIP_SIGNATURE_VERIFICATION=true` (pendiente de activar firma real con skill Alexa).
+- Configuración: `SKIP_SIGNATURE_VERIFICATION=false` y `ALEXA_SKILL_ID` configurado. Skill es-ES `biblioteca musical`, endpoint con certificado de CA pública, Audio Player activado en la consola y modelo recompilado.
+- Calidad: 88 tests verdes, `cargo check`, `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check` limpios.
+- Documentación: `docs/deploy-co1.md` y `docs/alexa-signature-playlists.md`.
+- Único follow-up: confirmación auditiva en un Echo físico con la misma cuenta (el simulador web no reproduce audio).

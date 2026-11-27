@@ -1,35 +1,32 @@
 # HANDOFF — Alexa-Navidrome Bridge
 
 ## Estado
-- Implementación completa y verificada. Todos los objetivos de PLAN.md cumplidos.
-- 77 tests en verde (`cargo test`), clippy `-D warnings` y fmt limpios.
+- Implementación, despliegue y verificación final completados con `v0.1.9`.
+- 88 tests en verde; `cargo check`, `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check` limpios en el último cambio.
+- Imagen desplegada en co1: `ghcr.io/atareao/alexa-music:v0.1.9`, healthy. Release/tag `v0.1.9` publicado en GitHub.
 
 ## Arquitectura (resumen 3 líneas)
-- Binario Rust (Axum/Tokio) + `src/lib.rs` público; puente HTTPS Alexa ASK ↔ Navidrome Subsonic v1.16.1.
+- Binario Rust (Axum/Tokio) + `src/lib.rs` público; puente HTTPS Alexa ASK ↔ Navidrome Subsonic/OpenSubsonic.
 - Cola de reproducción en memoria por `deviceId` (`Arc<RwLock<HashMap>>`), sin BD externa.
-- Firma Alexa RSA-SHA256 verificada con caché de certs TTL 24h; `SKIP_SIGNATURE_VERIFICATION=true` solo para desarrollo.
+- Firma Alexa RSA verificada sobre el body crudo (preferencia `Signature-256`, fallback legacy SHA-1), con caché de certificados TTL 24h; `SKIP_SIGNATURE_VERIFICATION=false` en producción.
+
+## Despliegue y verificación (co1)
+- Stack: `/home/lorenzo/docker/dockge/stacks/navidrome/compose.yaml`, servicio `alexabridge`; `navidrome` sigue Up y no fue reiniciado.
+- Config: `SKIP_SIGNATURE_VERIFICATION=false`, `ALEXA_SKILL_ID` configurado. No copiar valores de `.env` a docs ni al repo.
+- Endpoints: `https://alexa.territoriolinux.es/webhook` y `https://alexa.territoriolinux.es/health` → `{"status":"ok"}`.
+- Skill Custom es-ES, invocation name `biblioteca musical`, endpoint con certificado de CA pública (Let's Encrypt), sin wildcard. Audio Player activado en *Build → Interfaces* y modelo recompilado; `supportedInterfaces` no se pone en `interaction_model.json`.
+- Verificación final: `/health` 200; POST sin headers → 401; logs con `dispatching Alexa request intent=Some("PlayPlaylistIntent")`, `loading playlist tracks playlist=clasica song_count=Some(11)`, `starting playback track_id=6tat8goav82QFNlVTIs7ng` y `playback started token=track-6tat8goav82QFNlVTIs7ng error=None`; simulador mostró `Reproduciendo la lista clasica.`
+- Detalles: `docs/deploy-co1.md` y `docs/alexa-signature-playlists.md`.
 
 ## Pendiente / siguiente paso
-- Desplegar: `Containerfile` → imagen → `alexabridge.container` en red `proxy.network` con Traefik.
-- Importar `interaction_model.json` en Alexa Developer Console (JSON Editor, es-ES).
-- Configurar `/etc/alexabridge.env` con NAVIDROME_* y ALEXA_SKILL_ID.
+- Único pendiente: confirmación auditiva en un Echo físico con la misma cuenta. El simulador web no reproduce audio; los logs confirman `AudioPlayer.PlaybackStarted`.
 
 ## Comandos útiles
-- `cargo test` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`
-- `RUST_LOG=debug cargo run` (requiere variables de entorno)
+- `cargo test` · `cargo check` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`
+- En co1: `curl -i https://alexa.territoriolinux.es/health` · `docker logs --tail 100 alexabridge`
 
-## CI/CD (PLAN-001, issue #1)
-- Implementado: `.github/workflows/ci.yml` (fmt/clippy/test en PRs) y `.github/workflows/release.yml` (publicación en `ghcr.io/atareao/alexa-music`).
-- Tags publicados: `latest` (solo en `main`, rama por defecto), `main`, `development`, `vX.Y.Z`, `X.Y.Z`, `sha-<corto>`.
-- Consumidores: `compose.yml` y `alexabridge.container` usan `ghcr.io/atareao/alexa-music:latest` (el `build:` local de Compose está comentado).
-- Ver `docs/cicd.md` para el flujo completo de release.
-
-## Estado CI/CD verificado (cierre)
-- GitHub Actions: CI verde en PRs y pushes a main; Release publica `ghcr.io/atareao/alexa-music:latest`, `:main`, `:sha-<corto>` en ~3 min.
-- Toolchain fijada a 1.88.0 (MSRV de Cargo.lock), Containerfile con dummy target antes de `cargo fetch`.
-- Publicación multi-arch pospuesta (arm64 lento bajo QEMU); ver `docs/cicd.md`.
-
-## Despliegue co1 (PLAN-002, issue #7)
-- Stack `navidrome` en co1 incluye servicio `alexabridge` (imagen v0.1.0), FQDN https://alexa.territoriolinux.es.
-- Verificado: health 200, webhook 401/200, PlayMusicIntent → stream MP3 real.
-- Pendiente: activar firma real (SKIP=false + ALEXA_SKILL_ID) e importar interaction_model.json en Alexa.
+## CI/CD y seguimiento
+- CI: `.github/workflows/ci.yml` (fmt/clippy/test en PRs) y `.github/workflows/release.yml` (GHCR), ver `docs/cicd.md`.
+- Toolchain fijada a 1.88.0; publicación multi-arch pospuesta (arm64 lento bajo QEMU).
+- Issue #16; PRs #17, #18 (firma), #19/#20 (modelo AudioPlayer), #21/#22 (sanitize Query), #23/#24 (samples AMAZON), #25/#26 (sanitize playlist), #27/#28 (entry playlist).
+- PLAN-002 completado y archivado; PLAN-001 completado.
