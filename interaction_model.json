@@ -35,6 +35,12 @@
             }
           ],
           "samples": [
+            "pon la playlist {Playlist}",
+            "reproduce la playlist {Playlist}",
+            "pon la lista {Playlist}",
+            "reproduce la lista {Playlist}",
+            "quiero escuchar la playlist {Playlist}",
+            "pon la playlist {Playlist} por favor",
             "reproduce la lista de reproducción {Playlist} por favor",
             "pon la playlist {Playlist} ahora",
             "quiero escuchar la lista {Playlist} en el reproductor",
