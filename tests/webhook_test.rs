@@ -307,3 +307,14 @@ fn model_declares_listing_intents() {
         );
     }
 }
+
+#[test]
+fn model_declares_servidor_personal_invocation_name() {
+    let model: Value =
+        serde_json::from_str(include_str!("../interaction_model.json")).expect("valid model JSON");
+
+    assert_eq!(
+        model["interactionModel"]["languageModel"]["invocationName"],
+        "servidor personal"
+    );
+}
