@@ -1,0 +1,6 @@
+- [x] 1. RED: añadir el test de `clásica` vs `clasica` y verificar que falla.
+- [x] 2. GREEN: normalizar diacritíticos de forma simétrica y verificar `cargo test` / `cargo check`.
+- [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
+- [x] 4. Documentar el fix y actualizar `HANDOFF.md`.
+- [ ] 5. Verificación externa: reproducir `clasica` desde el Echo y revisar logs de co1.
+- [ ] 6. Consolidar: PR a `development`, marcar tareas y ejecutar `openspec archive playlist-accent-normalization`.
