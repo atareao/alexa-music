@@ -3,6 +3,7 @@
 //! Authentication follows the Subsonic password-encoding scheme: every
 //! request carries a fresh random salt and `md5(password + salt)` as token.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use rand::Rng;
@@ -141,10 +142,28 @@ pub struct PlaylistsBody {
 }
 
 /// Tracks of a playlist returned by `getPlaylist`.
+///
+/// Navidrome 0.64+ (OpenSubsonic) uses `entry`, while other Subsonic servers
+/// use `song`; both keys are accepted.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PlaylistBody {
     #[serde(default)]
     pub song: Option<Vec<Song>>,
+    #[serde(default)]
+    pub entry: Option<Vec<Song>>,
+}
+
+impl PlaylistBody {
+    /// Returns all tracks, with `entry` first and duplicate ids removed.
+    pub fn songs(self) -> Vec<Song> {
+        let mut seen: HashSet<String> = HashSet::new();
+        self.entry
+            .unwrap_or_default()
+            .into_iter()
+            .chain(self.song.unwrap_or_default())
+            .filter(|song| seen.insert(song.id.clone()))
+            .collect()
+    }
 }
 
 /// Tracks of an album returned by `getAlbum`.
@@ -302,8 +321,7 @@ impl SubsonicClient {
         Ok(body
             .getPlaylist
             .ok_or(SubsonicError::MissingField("playlist"))?
-            .song
-            .unwrap_or_default())
+            .songs())
     }
 
     /// Lists the songs of an album.
@@ -367,6 +385,110 @@ fn ensure_ok(body: &ResponseBody) -> Result<(), SubsonicError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// Minimal one-shot HTTP server serving a fixed `getPlaylist` response.
+    struct MockPlaylistServer {
+        base: String,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl MockPlaylistServer {
+        async fn start(response: &'static str) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind mock Subsonic server");
+            let addr = listener.local_addr().expect("mock server address");
+            let task = tokio::spawn(async move {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut request = Vec::new();
+                let mut chunk = [0_u8; 1024];
+                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let read = socket.read(&mut chunk).await.unwrap_or(0);
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&chunk[..read]);
+                }
+                let payload = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    response.len(),
+                    response
+                );
+                let _ = socket.write_all(payload.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            });
+            Self {
+                base: format!("http://{addr}"),
+                task,
+            }
+        }
+
+        fn client(&self) -> SubsonicClient {
+            SubsonicClient::new(self.base.clone(), "user".into(), "password".into())
+        }
+    }
+
+    impl Drop for MockPlaylistServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn get_playlist_reads_navidrome_entry_tracks() {
+        let server = MockPlaylistServer::start(
+            r#"{"subsonic-response":{"status":"ok","playlist":{"id":"p1","name":"clasica","songCount":1,"entry":[{"id":"s1","title":"T","artist":"A"}]}}}"#,
+        )
+        .await;
+
+        let songs = server
+            .client()
+            .get_playlist("p1")
+            .await
+            .expect("playlist tracks");
+
+        assert_eq!(songs.len(), 1, "songs: {songs:?}");
+        assert_eq!(songs[0].id, "s1");
+    }
+
+    #[tokio::test]
+    async fn get_playlist_still_reads_legacy_song_tracks() {
+        let server = MockPlaylistServer::start(
+            r#"{"subsonic-response":{"status":"ok","playlist":{"id":"p1","name":"Fav","song":[{"id":"s2","title":"T2","artist":"A"}]}}}"#,
+        )
+        .await;
+
+        let songs = server
+            .client()
+            .get_playlist("p1")
+            .await
+            .expect("playlist tracks");
+
+        assert_eq!(songs.len(), 1, "songs: {songs:?}");
+        assert_eq!(songs[0].id, "s2");
+    }
+
+    #[tokio::test]
+    async fn get_playlist_merges_entry_and_song_without_duplicates() {
+        let server = MockPlaylistServer::start(
+            r#"{"subsonic-response":{"status":"ok","playlist":{"id":"p1","name":"Both","entry":[{"id":"s1","title":"T1","artist":"A"}],"song":[{"id":"s1","title":"T1","artist":"A"},{"id":"s2","title":"T2","artist":"A"}]}}}"#,
+        )
+        .await;
+
+        let songs = server
+            .client()
+            .get_playlist("p1")
+            .await
+            .expect("playlist tracks");
+
+        assert_eq!(songs.len(), 2, "songs: {songs:?}");
+        assert_eq!(songs[0].id, "s1");
+        assert_eq!(songs[1].id, "s2");
+    }
 
     #[test]
     fn token_is_md5_of_password_salt() {
