@@ -41,7 +41,7 @@
 - Consumes: `endpoint_url(&self, method: &str, extra: &str) -> String`, `get_json`, `ensure_ok`, `Album`.
 - Produces: `pub async fn get_album_list(&self, size: usize, offset: usize) -> Result<Vec<Album>, SubsonicError>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Añadir en `src/subsonic.rs`:
 
@@ -60,13 +60,13 @@ fn get_album_list_reads_alphabetical_albums() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --quiet get_album_list_reads_alphabetical_albums`
 
 Expected: FAIL because `get_album_list` no existe.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Añadir structs y campo en `src/subsonic.rs`:
 
@@ -111,13 +111,13 @@ pub async fn get_album_list(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --quiet get_album_list_reads_alphabetical_albums`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/subsonic.rs
@@ -136,7 +136,7 @@ git commit -m "✨ feat: add getAlbumList2 Subsonic client"
 - Consumes: `endpoint_url`, `get_json`, `ensure_ok`, `Artist`.
 - Produces: `pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```rust
 #[test]
@@ -153,13 +153,13 @@ fn get_artists_flattens_index_entries() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --quiet get_artists_flattens_index_entries`
 
 Expected: FAIL because `get_artists` no existe.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```rust
 #[derive(Debug, Deserialize)]
@@ -194,13 +194,13 @@ pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --quiet get_artists_flattens_index_entries`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/subsonic.rs
@@ -219,7 +219,7 @@ git commit -m "✨ feat: add getArtists Subsonic client"
 - Consumes: `AlexaRequest`, `Session`, `AlexaResponse`, `ResponseBody`, `OutputSpeech`.
 - Produces: `ListingCursor`, `speak_with_session`, `cursor_from_request`, `render_page`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[test]
@@ -242,13 +242,13 @@ fn speak_with_session_serializes_cursor() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test --quiet session_attributes_are_deserialized speak_with_session_serializes_cursor`
 
 Expected: FAIL because fields/helpers no existen.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```rust
 use serde_json::Value;
@@ -328,13 +328,13 @@ fn render_page(mut cursor: ListingCursor) -> (String, ListingCursor) {
 
 Actualiza todos los constructores existentes de `AlexaResponse` para incluir `sessionAttributes: None`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test --quiet session_attributes_are_deserialized speak_with_session_serializes_cursor`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/alexa.rs
@@ -353,7 +353,7 @@ git commit -m "✨ feat: add Alexa session cursor for listings"
 - Consumes: `SubsonicClient`, `ListingCursor`, `speak_with_session`, `cursor_from_request`, `render_page`.
 - Produces: `handle_list_albums`, `handle_list_artists`, `handle_list_playlists`, `handle_more_listing`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[tokio::test]
@@ -382,13 +382,13 @@ async fn more_listing_uses_session_cursor() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test --quiet list_albums_returns_names_and_cursor more_listing_uses_session_cursor`
 
 Expected: FAIL because handlers no existen.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```rust
 pub async fn handle_list_albums(client: &SubsonicClient) -> AlexaResponse {
@@ -457,13 +457,13 @@ Añadir brazos en el `match intent.name.as_str()` de `handle_request`:
 "MoreListingIntent" => handle_more_listing(req),
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test --quiet`
 
 Expected: ALL PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/alexa.rs
@@ -482,17 +482,17 @@ git commit -m "✨ feat: add library listing intents"
 - Consumes: existing `languageModel.intents` array.
 - Produces: intents `ListAlbumsIntent`, `ListArtistsIntent`, `ListPlaylistsIntent`, `MoreListingIntent`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Añadir test que lea `interaction_model.json` y verifique que existen los cuatro intents y que ningún `AMAZON.*` tiene samples.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --quiet model_declares_listing_intents`
 
 Expected: FAIL.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Añadir al array `intents`:
 
@@ -538,13 +538,13 @@ Añadir al array `intents`:
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --quiet model_declares_listing_intents`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add interaction_model.json tests/webhook_test.rs
@@ -563,11 +563,11 @@ git commit -m "✨ feat: declare library listing intents"
 - Consumes: all previous tasks.
 - Produces: release `v0.2.0` with image `ghcr.io/atareao/alexa-music:v0.2.0`.
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
 
 Documentar los nuevos intents, ejemplos de voz, paginación y los métodos Subsonic añadidos.
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 Run:
 
@@ -580,19 +580,26 @@ cargo fmt -- --check
 
 Expected: ALL OK.
 
-- [ ] **Step 3: Commit docs**
+- [x] **Step 3: Commit docs**
 
 ```bash
 git add docs/alexa-signature-playlists.md HANDOFF.md
 git commit -m "📝 docs: document library listing intents"
 ```
 
-- [ ] **Step 4: Merge and release**
+- [x] **Step 4: Merge and release**
 
 PR a `development`, PR a `main`, tag `v0.2.0`, GitHub Release.
 
-- [ ] **Step 5: Deploy**
+- [x] **Step 5: Deploy**
 
 Actualizar `compose.yaml` en co1 a `v0.2.0`, recrear solo `alexabridge`, verificar `/health` y logs. Re-importar `interaction_model.json` en la consola de Alexa y hacer *Build Model*.
 
 ---
+
+## Estado final
+
+- Release `v0.2.0` publicada (PRs #32/#33, docs #34/#35).
+- 101 tests verdes; `cargo check`, `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check` limpios.
+- Auditoría ✅ APROBADA; imagen `ghcr.io/atareao/alexa-music:v0.2.0`.
+- Deploy en co1 en curso.
