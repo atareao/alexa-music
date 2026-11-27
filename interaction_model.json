@@ -139,7 +139,10 @@
           "samples": []
         }
       ],
-      "types": []
+      "types": [],
+      "supportedInterfaces": {
+        "AudioPlayer": {}
+      }
     }
   }
 }
