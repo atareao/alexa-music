@@ -694,10 +694,11 @@ pub fn sanitize_search_query(query: &str) -> String {
     ];
     let mut q = query;
     loop {
+        let lowered = q.to_lowercase();
         let mut stripped = false;
         for prefix in prefixes {
-            if let Some(rest) = q.strip_prefix(prefix) {
-                q = rest;
+            if lowered.starts_with(*prefix) {
+                q = &q[prefix.len()..];
                 stripped = true;
                 break;
             }
@@ -1890,6 +1891,142 @@ mod tests {
         assert_eq!(
             value["response"]["outputSpeech"]["text"],
             "Reproduciendo la lista Clásicos."
+        );
+        assert_eq!(
+            value["response"]["directives"][0]["audioItem"]["stream"]["token"],
+            "track-p1-s1"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_play_playlist_does_not_collapse_ene() {
+        let server = MockServer::start(vec![
+            (
+                "getPlaylists",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlists": {
+                            "playlist": [
+                                { "id": "p1", "name": "anio" },
+                                { "id": "p2", "name": "año" }
+                            ]
+                        }
+                    }
+                }),
+            ),
+            (
+                "getPlaylist",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlist": {
+                            "song": [{ "id": "p2-s1", "title": "One", "artist": "Singer" }]
+                        }
+                    }
+                }),
+            ),
+        ])
+        .await;
+        let state = test_state();
+        let request = parse(intent_payload_named(
+            "PlayPlaylistIntent",
+            json!({ "Playlist": { "name": "Playlist", "value": "año" } }),
+        ));
+
+        let value = serde_json::to_value(
+            handle_request(&request, &server.client(), &state, &test_config()).await,
+        )
+        .unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Reproduciendo la lista año."
+        );
+        assert_eq!(
+            value["response"]["directives"][0]["audioItem"]["stream"]["token"],
+            "track-p2-s1"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_play_playlist_reports_no_match_without_directives() {
+        let server = MockServer::start(vec![(
+            "getPlaylists",
+            json!({
+                "subsonic-response": {
+                    "status": "ok",
+                    "playlists": {
+                        "playlist": [{ "id": "p1", "name": "Favoritas" }]
+                    }
+                }
+            }),
+        )])
+        .await;
+        let state = test_state();
+        let request = parse(intent_payload_named(
+            "PlayPlaylistIntent",
+            json!({ "Playlist": { "name": "Playlist", "value": "desconocida" } }),
+        ));
+
+        let value = serde_json::to_value(
+            handle_request(&request, &server.client(), &state, &test_config()).await,
+        )
+        .unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "No he encontrado esa lista de reproducción."
+        );
+        assert!(value["response"]["directives"].is_null());
+    }
+
+    #[tokio::test]
+    async fn handle_play_playlist_strips_uppercase_prefixed_query() {
+        let server = MockServer::start(vec![
+            (
+                "getPlaylists",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlists": {
+                            "playlist": [{ "id": "p1", "name": "Favoritas" }]
+                        }
+                    }
+                }),
+            ),
+            (
+                "getPlaylist",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlist": {
+                            "song": [{ "id": "p1-s1", "title": "One", "artist": "Singer" }]
+                        }
+                    }
+                }),
+            ),
+        ])
+        .await;
+        let state = test_state();
+        let request = parse(intent_payload_named(
+            "PlayPlaylistIntent",
+            json!({
+                "Playlist": {
+                    "name": "Playlist",
+                    "value": "PON MÚSICA DE FAVORITAS"
+                }
+            }),
+        ));
+
+        let value = serde_json::to_value(
+            handle_request(&request, &server.client(), &state, &test_config()).await,
+        )
+        .unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Reproduciendo la lista Favoritas."
         );
         assert_eq!(
             value["response"]["directives"][0]["audioItem"]["stream"]["token"],
