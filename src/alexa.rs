@@ -252,7 +252,6 @@ pub fn audio_play(url: &str, token: &str, offset_ms: i64, behavior: &str) -> Ale
                     },
                 }),
             }],
-            shouldEndSession: Some(true),
             ..ResponseBody::default()
         }),
     }
@@ -516,6 +515,40 @@ pub fn handle_navigate_home() -> AlexaResponse {
     }
 }
 
+/// Removes common Spanish prefixes from a search query before sending to Navidrome.
+/// Tries longer prefixes first; if the result is empty, returns the original query.
+/// Strips all matching prefixes iteratively, respecting the order (longest first).
+pub fn sanitize_search_query(query: &str) -> String {
+    // Prefixes ordered by length descending to try longest first
+    let prefixes: &[&str] = &[
+        "reproduce musica de ",
+        "pon musica de ",
+        "musica de ",
+        "música de ",
+        "reproduce ",
+        "pon ",
+    ];
+    let mut q = query;
+    loop {
+        let mut stripped = false;
+        for prefix in prefixes {
+            if let Some(rest) = q.strip_prefix(prefix) {
+                q = rest;
+                stripped = true;
+                break;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    if q.is_empty() {
+        query.to_owned()
+    } else {
+        q.to_string()
+    }
+}
+
 /// Searches songs, albums and artists (in that priority order) and plays the first track.
 pub async fn handle_play_music(
     req: &AlexaRequest,
@@ -532,7 +565,8 @@ pub async fn handle_play_music(
         );
     };
 
-    let results = match client.search3(query).await {
+    let search_query = sanitize_search_query(query);
+    let results = match client.search3(&search_query).await {
         Ok(results) => results,
         Err(err) => {
             error!(error = %err, query, "search3 failed");
@@ -1099,7 +1133,7 @@ mod tests {
             500
         );
         assert!(directive["audioItem"]["stream"]["expectedPreviousToken"].is_null());
-        assert_eq!(value["response"]["shouldEndSession"], true);
+        assert!(value["response"]["shouldEndSession"].is_null());
         assert!(value["response"]["outputSpeech"].is_null());
     }
 
@@ -1582,5 +1616,22 @@ mod tests {
         .unwrap();
 
         assert_eq!(value, json!({ "version": "1.0", "response": {} }));
+    }
+
+    #[test]
+    fn sanitize_search_query_unit() {
+        assert_eq!(
+            sanitize_search_query("musica de la oreja de van gogh"),
+            "la oreja de van gogh"
+        );
+        assert_eq!(
+            sanitize_search_query("pon musica de cancion X"),
+            "cancion X"
+        );
+        assert_eq!(
+            sanitize_search_query("reproduce música de la canción"),
+            "la canción"
+        );
+        assert_eq!(sanitize_search_query("no prefix here"), "no prefix here");
     }
 }

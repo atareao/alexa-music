@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# Pinned tags: Rust 1.83 / Alpine 3.20 (stable as of Nov 2026).
+# Pinned tags: Rust 1.88 / Alpine 3.20 (MSRV del lockfile: icu_* 2.4.0 y time 0.3.55 requieren 1.88; ver CI).
 # Revisit pins with every toolchain upgrade; digests are preferred for reproducible builds.
-FROM rust:1.83-alpine AS builder
+FROM rust:1.88-alpine AS builder
 
 # musl-dev for the target libc; perl is required by `ring` (rustls crypto backend).
 RUN apk add --no-cache musl-dev perl
@@ -9,8 +9,10 @@ RUN apk add --no-cache musl-dev perl
 WORKDIR /app
 
 # Manifests first: dependency fetching is cached until Cargo.toml/Cargo.lock change.
+# Cargo needs a real target in the manifest, so create a dummy main.rs; the real
+# sources copied below overwrite it before the build.
 COPY Cargo.toml Cargo.lock ./
-RUN cargo fetch --locked
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs && cargo fetch --locked
 
 COPY src ./src
 RUN cargo build --release --locked --offline
