@@ -713,6 +713,23 @@ pub fn sanitize_search_query(query: &str) -> String {
     }
 }
 
+/// Lowercases a search term and strips Spanish vowel diacritics; `ñ` stays distinct.
+fn normalize_for_playlist_search(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' => 'a',
+            'é' => 'e',
+            'í' => 'i',
+            'ó' => 'o',
+            'ú' => 'u',
+            'ü' => 'u',
+            other => other,
+        })
+        .collect()
+}
+
 /// Searches songs, albums and artists (in that priority order) and plays the first track.
 pub async fn handle_play_music(
     req: &AlexaRequest,
@@ -821,10 +838,10 @@ pub async fn handle_play_playlist(
     };
 
     let search_query = sanitize_search_query(query);
-    let needle = search_query.to_lowercase();
+    let needle = normalize_for_playlist_search(&search_query);
     let Some(playlist) = playlists
         .iter()
-        .find(|playlist| playlist.name.to_lowercase().contains(&needle))
+        .find(|playlist| normalize_for_playlist_search(&playlist.name).contains(&needle))
     else {
         warn!(query, "no playlist matched the spoken name");
         return speak("No he encontrado esa lista de reproducción.", true);
@@ -1777,6 +1794,102 @@ mod tests {
         assert_eq!(
             value["response"]["outputSpeech"]["text"],
             "Reproduciendo la lista Favoritas."
+        );
+        assert_eq!(
+            value["response"]["directives"][0]["audioItem"]["stream"]["token"],
+            "track-p1-s1"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_play_playlist_matches_accented_spoken_name() {
+        let server = MockServer::start(vec![
+            (
+                "getPlaylists",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlists": {
+                            "playlist": [{ "id": "p1", "name": "clasica" }]
+                        }
+                    }
+                }),
+            ),
+            (
+                "getPlaylist",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlist": {
+                            "song": [{ "id": "p1-s1", "title": "One", "artist": "Singer" }]
+                        }
+                    }
+                }),
+            ),
+        ])
+        .await;
+        let state = test_state();
+        let request = parse(intent_payload_named(
+            "PlayPlaylistIntent",
+            json!({ "Playlist": { "name": "Playlist", "value": "clásica" } }),
+        ));
+
+        let value = serde_json::to_value(
+            handle_request(&request, &server.client(), &state, &test_config()).await,
+        )
+        .unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Reproduciendo la lista clasica."
+        );
+        assert_eq!(
+            value["response"]["directives"][0]["audioItem"]["stream"]["token"],
+            "track-p1-s1"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_play_playlist_matches_accented_stored_name() {
+        let server = MockServer::start(vec![
+            (
+                "getPlaylists",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlists": {
+                            "playlist": [{ "id": "p1", "name": "Clásicos" }]
+                        }
+                    }
+                }),
+            ),
+            (
+                "getPlaylist",
+                json!({
+                    "subsonic-response": {
+                        "status": "ok",
+                        "playlist": {
+                            "song": [{ "id": "p1-s1", "title": "One", "artist": "Singer" }]
+                        }
+                    }
+                }),
+            ),
+        ])
+        .await;
+        let state = test_state();
+        let request = parse(intent_payload_named(
+            "PlayPlaylistIntent",
+            json!({ "Playlist": { "name": "Playlist", "value": "clasicos" } }),
+        ));
+
+        let value = serde_json::to_value(
+            handle_request(&request, &server.client(), &state, &test_config()).await,
+        )
+        .unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Reproduciendo la lista Clásicos."
         );
         assert_eq!(
             value["response"]["directives"][0]["audioItem"]["stream"]["token"],
