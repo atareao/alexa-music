@@ -167,10 +167,12 @@ pub struct AlexaResponse {
 }
 
 /// Pagination state stored in Alexa session attributes between listing turns.
+///
+/// Only the offset is persisted: storing the whole listing would exceed the
+/// ~24 KB `sessionAttributes` limit, so items are re-read from Navidrome.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ListingCursor {
     pub kind: String,
-    pub items: Vec<String>,
     pub offset: usize,
 }
 
@@ -259,31 +261,27 @@ pub fn speak_with_session(text: &str, cursor: &ListingCursor) -> AlexaResponse {
 }
 
 /// Reads the listing cursor stored in the incoming session attributes.
-// Consumed by the listing handlers added in the next plan task.
-#[allow(dead_code)]
 fn cursor_from_request(req: &AlexaRequest) -> Option<ListingCursor> {
     let value = req.session.as_ref()?.attributes.get("listing")?;
     serde_json::from_value(value.clone()).ok()
 }
 
 /// Number of listing items announced in a single response.
-#[allow(dead_code)]
 const PAGE_SIZE: usize = 10;
 
 /// Announces the next page of a listing and returns the advanced cursor.
-#[allow(dead_code)]
-fn render_page(mut cursor: ListingCursor) -> (String, ListingCursor) {
+fn render_page(mut cursor: ListingCursor, items: &[String]) -> (String, ListingCursor) {
     let label = match cursor.kind.as_str() {
         "albums" => "álbumes",
         "artists" => "artistas",
         "playlists" => "listas",
         _ => "resultados",
     };
-    if cursor.offset >= cursor.items.len() {
+    if cursor.offset >= items.len() {
         return (format!("No hay más {label}."), cursor);
     }
-    let end = (cursor.offset + PAGE_SIZE).min(cursor.items.len());
-    let page = &cursor.items[cursor.offset..end];
+    let end = (cursor.offset + PAGE_SIZE).min(items.len());
+    let page = &items[cursor.offset..end];
     let text = format!("Tienes estos {label}: {}.", page.join("; "));
     cursor.offset = end;
     (text, cursor)
@@ -515,6 +513,10 @@ pub async fn handle_request(
         RequestBody::IntentRequest { intent, .. } => match intent.name.as_str() {
             "PlayMusicIntent" => handle_play_music(req, &intent.slots, client, state).await,
             "PlayPlaylistIntent" => handle_play_playlist(req, &intent.slots, client, state).await,
+            "ListAlbumsIntent" => handle_list_albums(client).await,
+            "ListArtistsIntent" => handle_list_artists(client).await,
+            "ListPlaylistsIntent" => handle_list_playlists(client).await,
+            "MoreListingIntent" => handle_more_listing(req, client).await,
             "AMAZON.NextIntent" => handle_next(req, state, client).await,
             "AMAZON.PreviousIntent" => handle_previous(req, state, client).await,
             "AMAZON.PauseIntent" | "AMAZON.StopIntent" | "AMAZON.CancelIntent" => {
@@ -573,6 +575,108 @@ pub fn handle_navigate_home() -> AlexaResponse {
         }),
         sessionAttributes: None,
     }
+}
+
+/// Lists the first page of albums, keeping the pagination cursor in session.
+pub async fn handle_list_albums(client: &SubsonicClient) -> AlexaResponse {
+    match client.get_album_list(PAGE_SIZE, 0).await {
+        Ok(albums) if albums.is_empty() => speak("No tengo álbumes en la biblioteca.", true),
+        Ok(albums) => {
+            let items: Vec<String> = albums.into_iter().map(|album| album.name).collect();
+            let cursor = ListingCursor {
+                kind: "albums".to_owned(),
+                offset: 0,
+            };
+            let (text, next) = render_page(cursor, &items);
+            speak_with_session(&text, &next)
+        }
+        Err(err) => {
+            error!(error = %err, "getAlbumList2 failed");
+            speak("No he podido consultar tus álbumes.", true)
+        }
+    }
+}
+
+/// Lists the first page of artists, keeping the pagination cursor in session.
+pub async fn handle_list_artists(client: &SubsonicClient) -> AlexaResponse {
+    match client.get_artists().await {
+        Ok(artists) if artists.is_empty() => speak("No tengo artistas en la biblioteca.", true),
+        Ok(artists) => {
+            let items: Vec<String> = artists.into_iter().map(|artist| artist.name).collect();
+            let cursor = ListingCursor {
+                kind: "artists".to_owned(),
+                offset: 0,
+            };
+            let (text, next) = render_page(cursor, &items);
+            speak_with_session(&text, &next)
+        }
+        Err(err) => {
+            error!(error = %err, "getArtists failed");
+            speak("No he podido consultar tus artistas.", true)
+        }
+    }
+}
+
+/// Lists the first page of playlists, keeping the pagination cursor in session.
+pub async fn handle_list_playlists(client: &SubsonicClient) -> AlexaResponse {
+    match client.get_playlists().await {
+        Ok(playlists) if playlists.is_empty() => speak("No tengo listas de reproducción.", true),
+        Ok(playlists) => {
+            let items: Vec<String> = playlists
+                .into_iter()
+                .map(|playlist| playlist.name)
+                .collect();
+            let cursor = ListingCursor {
+                kind: "playlists".to_owned(),
+                offset: 0,
+            };
+            let (text, next) = render_page(cursor, &items);
+            speak_with_session(&text, &next)
+        }
+        Err(err) => {
+            error!(error = %err, "getPlaylists failed");
+            speak("No he podido consultar tus listas.", true)
+        }
+    }
+}
+
+/// Re-reads the next page from Navidrome using the stored session cursor.
+pub async fn handle_more_listing(req: &AlexaRequest, client: &SubsonicClient) -> AlexaResponse {
+    let Some(cursor) = cursor_from_request(req) else {
+        return speak("Dime primero qué quieres listar.", true);
+    };
+    let items: Vec<String> = match cursor.kind.as_str() {
+        "albums" => match client.get_album_list(cursor.offset + PAGE_SIZE, 0).await {
+            Ok(albums) => albums.into_iter().map(|album| album.name).collect(),
+            Err(err) => {
+                error!(error = %err, "getAlbumList2 failed");
+                return speak("No he podido consultar tus álbumes.", true);
+            }
+        },
+        "artists" => match client.get_artists().await {
+            Ok(artists) => artists.into_iter().map(|artist| artist.name).collect(),
+            Err(err) => {
+                error!(error = %err, "getArtists failed");
+                return speak("No he podido consultar tus artistas.", true);
+            }
+        },
+        "playlists" => match client.get_playlists().await {
+            Ok(playlists) => playlists
+                .into_iter()
+                .map(|playlist| playlist.name)
+                .collect(),
+            Err(err) => {
+                error!(error = %err, "getPlaylists failed");
+                return speak("No he podido consultar tus listas.", true);
+            }
+        },
+        other => {
+            warn!(kind = other, "unknown listing cursor kind");
+            return speak("Dime primero qué quieres listar.", true);
+        }
+    };
+    let (text, next) = render_page(cursor, &items);
+    speak_with_session(&text, &next)
 }
 
 /// Removes common Spanish prefixes from a search query before sending to Navidrome.
@@ -1031,7 +1135,7 @@ pub fn handle_session_ended() -> AlexaResponse {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
-    use std::sync::{Arc, RwLock};
+    use std::sync::{Arc, Mutex, RwLock};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -1245,6 +1349,7 @@ mod tests {
     struct MockServer {
         base: String,
         task: tokio::task::JoinHandle<()>,
+        last_target: Arc<Mutex<Option<String>>>,
     }
 
     impl MockServer {
@@ -1254,6 +1359,8 @@ mod tests {
                 .await
                 .expect("bind mock Subsonic server");
             let addr = listener.local_addr().expect("mock server address");
+            let last_target = Arc::new(Mutex::new(None));
+            let target_sink = Arc::clone(&last_target);
 
             let task = tokio::spawn(async move {
                 for (method, body) in responses {
@@ -1275,10 +1382,16 @@ mod tests {
                         .next()
                         .unwrap_or_default()
                         .to_owned();
-                    let called_method = request_line
+                    let request_target = request_line
                         .split_whitespace()
                         .nth(1)
-                        .and_then(|target| target.split('?').next())
+                        .unwrap_or_default()
+                        .to_owned();
+                    *target_sink.lock().expect("mock request target") =
+                        Some(request_target.clone());
+                    let called_method = request_target
+                        .split('?')
+                        .next()
                         .and_then(|path| path.rsplit('/').next());
                     let payload = if called_method == Some(method) {
                         body
@@ -1307,7 +1420,16 @@ mod tests {
             Self {
                 base: format!("http://{addr}"),
                 task,
+                last_target,
             }
+        }
+
+        /// Returns the path plus query string of the most recent request.
+        fn last_target(&self) -> Option<String> {
+            self.last_target
+                .lock()
+                .expect("mock request target")
+                .clone()
         }
 
         fn client(&self) -> SubsonicClient {
@@ -1701,7 +1823,7 @@ mod tests {
         let payload = json!({
             "version": "1.0",
             "session": {
-                "attributes": {"listing": {"kind": "albums", "items": ["A"], "offset": 1}}
+                "attributes": {"listing": {"kind": "albums", "offset": 1}}
             },
             "request": {
                 "type": "LaunchRequest",
@@ -1719,7 +1841,6 @@ mod tests {
     fn speak_with_session_serializes_cursor() {
         let cursor = ListingCursor {
             kind: "albums".into(),
-            items: vec!["A".into()],
             offset: 1,
         };
 
@@ -1734,11 +1855,10 @@ mod tests {
         let items: Vec<String> = (1..=12).map(|index| format!("Álbum {index}")).collect();
         let cursor = ListingCursor {
             kind: "albums".into(),
-            items,
             offset: 0,
         };
 
-        let (text, updated) = render_page(cursor);
+        let (text, updated) = render_page(cursor, &items);
 
         assert!(text.contains("Álbum 1"), "text: {text}");
         assert!(text.contains("Álbum 10"), "text: {text}");
@@ -1750,13 +1870,151 @@ mod tests {
     fn render_page_reports_no_more_items() {
         let cursor = ListingCursor {
             kind: "albums".into(),
-            items: vec!["Único".into()],
             offset: 1,
         };
+        let items = vec!["Único".to_owned()];
 
-        let (text, updated) = render_page(cursor);
+        let (text, updated) = render_page(cursor, &items);
 
         assert_eq!(text, "No hay más álbumes.");
         assert_eq!(updated.offset, 1);
+    }
+
+    #[tokio::test]
+    async fn list_albums_returns_names_and_cursor() {
+        let server = MockServer::start(vec![(
+            "getAlbumList2",
+            json!({"subsonic-response":{"status":"ok","version":"1.16.1","albumList2":{"album":[{"id":"a1","name":"Uno"},{"id":"a2","name":"Dos"}]}}}),
+        )])
+        .await;
+
+        let response = handle_list_albums(&server.client()).await;
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Tienes estos álbumes: Uno; Dos."
+        );
+        assert_eq!(
+            value["sessionAttributes"]["listing"],
+            json!({"kind": "albums", "offset": 2})
+        );
+    }
+
+    #[tokio::test]
+    async fn more_listing_uses_session_cursor() {
+        let server = MockServer::start(vec![(
+            "getAlbumList2",
+            json!({"subsonic-response":{"status":"ok","version":"1.16.1","albumList2":{"album":[{"id":"a1","name":"Uno"},{"id":"a2","name":"Dos"}]}}}),
+        )])
+        .await;
+        let payload = json!({
+            "version": "1.0",
+            "session": {"attributes": {"listing": {"kind": "albums", "offset": 1}}},
+            "request": {
+                "type": "IntentRequest",
+                "requestId": "r",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "locale": "es-ES",
+                "intent": {"name": "MoreListingIntent"}
+            }
+        });
+        let req: AlexaRequest = serde_json::from_value(payload).unwrap();
+
+        let response = handle_more_listing(&req, &server.client()).await;
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Tienes estos álbumes: Dos."
+        );
+    }
+
+    #[tokio::test]
+    async fn list_artists_returns_names() {
+        let server = MockServer::start(vec![(
+            "getArtists",
+            json!({"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[{"artist":[{"id":"ar1","name":"Vivaldi"}]}]}}}),
+        )])
+        .await;
+
+        let response = handle_list_artists(&server.client()).await;
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Tienes estos artistas: Vivaldi."
+        );
+        assert_eq!(value["sessionAttributes"]["listing"]["kind"], "artists");
+    }
+
+    #[tokio::test]
+    async fn list_playlists_returns_names() {
+        let server = MockServer::start(vec![(
+            "getPlaylists",
+            json!({"subsonic-response":{"status":"ok","version":"1.16.1","playlists":{"playlist":[{"id":"p1","name":"Favoritas"}]}}}),
+        )])
+        .await;
+
+        let response = handle_list_playlists(&server.client()).await;
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Tienes estos listas: Favoritas."
+        );
+        assert_eq!(value["sessionAttributes"]["listing"]["kind"], "playlists");
+    }
+
+    #[tokio::test]
+    async fn no_cursor_returns_prompt() {
+        let server = MockServer::start(Vec::new()).await;
+        let mut payload = intent_payload();
+        payload["request"]["intent"] = json!({"name": "MoreListingIntent"});
+        payload["session"]["attributes"] = json!({});
+        let req: AlexaRequest = serde_json::from_value(payload).unwrap();
+
+        let value = serde_json::to_value(
+            handle_request(&req, &server.client(), &test_state(), &test_config()).await,
+        )
+        .unwrap();
+
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Dime primero qué quieres listar."
+        );
+    }
+
+    #[tokio::test]
+    async fn more_listing_albums_reads_from_start_with_expanded_size() {
+        let server = MockServer::start(vec![(
+            "getAlbumList2",
+            json!({"subsonic-response":{"status":"ok","version":"1.16.1","albumList2":{"album":[{"id":"a1","name":"Uno"},{"id":"a2","name":"Dos"}]}}}),
+        )])
+        .await;
+        let payload = json!({
+            "version": "1.0",
+            "session": {"attributes": {"listing": {"kind": "albums", "offset": 1}}},
+            "request": {
+                "type": "IntentRequest",
+                "requestId": "r",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "locale": "es-ES",
+                "intent": {"name": "MoreListingIntent"}
+            }
+        });
+        let req: AlexaRequest = serde_json::from_value(payload).unwrap();
+
+        let response = handle_more_listing(&req, &server.client()).await;
+        let target = server.last_target().expect("getAlbumList2 request target");
+        let value = serde_json::to_value(response).unwrap();
+
+        assert!(target.contains("size=11"), "target: {target}");
+        assert!(target.contains("offset=0"), "target: {target}");
+        assert!(!target.contains("offset=1"), "target: {target}");
+        assert_eq!(
+            value["response"]["outputSpeech"]["text"],
+            "Tienes estos álbumes: Dos."
+        );
     }
 }
