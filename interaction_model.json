@@ -2,7 +2,7 @@
   "interactionModel": {
     "languageModel": {
       "locale": "es-ES",
-      "invocationName": "biblioteca musical",
+      "invocationName": "servidor personal",
       "intents": [
         {
           "name": "PlayMusicIntent",
