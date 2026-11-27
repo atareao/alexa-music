@@ -5,7 +5,7 @@ Cambio del nombre de invocación del skill es-ES a `servidor personal`, un nombr
 
 ## Evidencia
 - El simulador en modo texto enruta correctamente al skill con los modelos anteriores.
-- El Echo Dot por voz sigue respondiendo sobre la biblioteca de Amazon; esa frase no existe en este repositorio.
+- Verificado 27-11-2026 en Echo con `v0.2.1`: `LaunchRequest` 18:00–18:03Z, `PlayPlaylistIntent` 18:24:36Z (`clasica`, `starting playback`/`playback started`), `ListPlaylistsIntent` 18:25:45Z/18:25:55Z → `MoreListingIntent` 18:26:01Z; sin `401` ni panic. El Dot respondió «no hay más» al no quedar más playlists → fin de lista correcto.
 - La skill no aparecía en «Tus habilidades». La consola Alexa tiene el interruptor *Test → Skill testing is enabled in*, que debe estar en **Development** para que la skill esté disponible en la app y en el dispositivo.
 
 ## Ficheros implicados
@@ -13,7 +13,7 @@ Cambio del nombre de invocación del skill es-ES a `servidor personal`, un nombr
 - `tests/webhook_test.rs`: test `model_declares_servidor_personal_invocation_name`.
 - `docs/servidor-personal-invocation.md`: este documento.
 - `docs/alexa-signature-playlists.md`: frases de prueba.
-- `HANDOFF.md`: estado y verificación pendiente.
+- `HANDOFF.md`: estado y verificación en Echo.
 
 ## Cómo funciona
 Alexa usa `invocationName` para enrutar la petición. Con el nuevo valor se dice «Alexa, abre servidor personal» o «Alexa, abre servidor personal y dime qué álbumes tengo». Los intents y el cursor `sessionAttributes.listing = {"kind": ..., "offset": N}` no cambian.
@@ -35,5 +35,5 @@ No hay variables de entorno nuevas. El endpoint HTTPS y `ALEXA_SKILL_ID` se mant
 - Se elige `servidor personal`: dos palabras, minúsculas, sin artículos ni preposiciones.
 
 ## Follow-ups
-- Confirmación en Echo físico con la skill habilitada en Development.
-- Cerrar issues #38, #40 y #42; archivar `PLAN-006` y el change OpenSpec tras la verificación.
+- Verificado en Echo con la skill habilitada en Development: verificado 27-11-2026 (`LaunchRequest`, `PlayPlaylistIntent` 18:24:36Z, `MoreListingIntent` 18:26:01Z, sin `401`).
+- Issues #38, #40 y #42 cerrados; `PLAN-006` y el change OpenSpec archivados.
