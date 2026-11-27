@@ -101,6 +101,8 @@ pub struct Session {
     pub application: Option<Application>,
     #[serde(default)]
     pub user: Option<User>,
+    #[serde(default)]
+    pub attributes: HashMap<String, serde_json::Value>,
 }
 
 /// Skill application metadata.
@@ -154,11 +156,22 @@ pub struct AudioPlayerEvent {
 }
 
 /// Outgoing Alexa response envelope.
+#[allow(non_snake_case)]
 #[derive(Debug, Serialize)]
 pub struct AlexaResponse {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseBody>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sessionAttributes: Option<HashMap<String, serde_json::Value>>,
+}
+
+/// Pagination state stored in Alexa session attributes between listing turns.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListingCursor {
+    pub kind: String,
+    pub items: Vec<String>,
+    pub offset: usize,
 }
 
 /// Body of an outgoing Alexa response.
@@ -232,7 +245,48 @@ pub fn speak(text: &str, end_session: bool) -> AlexaResponse {
             shouldEndSession: Some(end_session),
             ..ResponseBody::default()
         }),
+        sessionAttributes: None,
     }
+}
+
+/// Builds a response that speaks `text` and keeps the listing cursor in session.
+pub fn speak_with_session(text: &str, cursor: &ListingCursor) -> AlexaResponse {
+    let mut response = speak(text, false);
+    if let Ok(value) = serde_json::to_value(cursor) {
+        response.sessionAttributes = Some(HashMap::from([("listing".to_owned(), value)]));
+    }
+    response
+}
+
+/// Reads the listing cursor stored in the incoming session attributes.
+// Consumed by the listing handlers added in the next plan task.
+#[allow(dead_code)]
+fn cursor_from_request(req: &AlexaRequest) -> Option<ListingCursor> {
+    let value = req.session.as_ref()?.attributes.get("listing")?;
+    serde_json::from_value(value.clone()).ok()
+}
+
+/// Number of listing items announced in a single response.
+#[allow(dead_code)]
+const PAGE_SIZE: usize = 10;
+
+/// Announces the next page of a listing and returns the advanced cursor.
+#[allow(dead_code)]
+fn render_page(mut cursor: ListingCursor) -> (String, ListingCursor) {
+    let label = match cursor.kind.as_str() {
+        "albums" => "álbumes",
+        "artists" => "artistas",
+        "playlists" => "listas",
+        _ => "resultados",
+    };
+    if cursor.offset >= cursor.items.len() {
+        return (format!("No hay más {label}."), cursor);
+    }
+    let end = (cursor.offset + PAGE_SIZE).min(cursor.items.len());
+    let page = &cursor.items[cursor.offset..end];
+    let text = format!("Tienes estos {label}: {}.", page.join("; "));
+    cursor.offset = end;
+    (text, cursor)
 }
 
 /// Builds a response with an `AudioPlayer.Play` directive that replaces the queue.
@@ -254,6 +308,7 @@ pub fn audio_play(url: &str, token: &str, offset_ms: i64, behavior: &str) -> Ale
             }],
             ..ResponseBody::default()
         }),
+        sessionAttributes: None,
     }
 }
 
@@ -281,6 +336,7 @@ pub fn audio_play_enqueue(
             }],
             ..ResponseBody::default()
         }),
+        sessionAttributes: None,
     }
 }
 
@@ -297,6 +353,7 @@ pub fn audio_stop() -> AlexaResponse {
             shouldEndSession: Some(true),
             ..ResponseBody::default()
         }),
+        sessionAttributes: None,
     }
 }
 
@@ -305,6 +362,7 @@ pub fn empty() -> AlexaResponse {
     AlexaResponse {
         version: "1.0".to_owned(),
         response: Some(ResponseBody::default()),
+        sessionAttributes: None,
     }
 }
 
@@ -372,6 +430,7 @@ fn build_stop_response(speech: Option<&str>) -> AlexaResponse {
             }],
             ..ResponseBody::default()
         }),
+        sessionAttributes: None,
     }
 }
 
@@ -512,6 +571,7 @@ pub fn handle_navigate_home() -> AlexaResponse {
             }],
             ..ResponseBody::default()
         }),
+        sessionAttributes: None,
     }
 }
 
@@ -1634,5 +1694,69 @@ mod tests {
             "la canción"
         );
         assert_eq!(sanitize_search_query("no prefix here"), "no prefix here");
+    }
+
+    #[test]
+    fn session_attributes_are_deserialized() {
+        let payload = json!({
+            "version": "1.0",
+            "session": {
+                "attributes": {"listing": {"kind": "albums", "items": ["A"], "offset": 1}}
+            },
+            "request": {
+                "type": "LaunchRequest",
+                "requestId": "r",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "locale": "es-ES"
+            }
+        });
+        let req: AlexaRequest = serde_json::from_value(payload).unwrap();
+
+        assert!(req.session.unwrap().attributes.contains_key("listing"));
+    }
+
+    #[test]
+    fn speak_with_session_serializes_cursor() {
+        let cursor = ListingCursor {
+            kind: "albums".into(),
+            items: vec!["A".into()],
+            offset: 1,
+        };
+
+        let value = serde_json::to_value(speak_with_session("Tienes álbumes.", &cursor)).unwrap();
+
+        assert_eq!(value["sessionAttributes"]["listing"]["kind"], "albums");
+        assert_eq!(value["response"]["shouldEndSession"], false);
+    }
+
+    #[test]
+    fn render_page_returns_ten_items_and_updates_offset() {
+        let items: Vec<String> = (1..=12).map(|index| format!("Álbum {index}")).collect();
+        let cursor = ListingCursor {
+            kind: "albums".into(),
+            items,
+            offset: 0,
+        };
+
+        let (text, updated) = render_page(cursor);
+
+        assert!(text.contains("Álbum 1"), "text: {text}");
+        assert!(text.contains("Álbum 10"), "text: {text}");
+        assert!(!text.contains("Álbum 11"), "text: {text}");
+        assert_eq!(updated.offset, 10);
+    }
+
+    #[test]
+    fn render_page_reports_no_more_items() {
+        let cursor = ListingCursor {
+            kind: "albums".into(),
+            items: vec!["Único".into()],
+            offset: 1,
+        };
+
+        let (text, updated) = render_page(cursor);
+
+        assert_eq!(text, "No hay más álbumes.");
+        assert_eq!(updated.offset, 1);
     }
 }
