@@ -252,7 +252,6 @@ pub fn audio_play(url: &str, token: &str, offset_ms: i64, behavior: &str) -> Ale
                     },
                 }),
             }],
-            shouldEndSession: Some(true),
             ..ResponseBody::default()
         }),
     }
@@ -1099,7 +1098,7 @@ mod tests {
             500
         );
         assert!(directive["audioItem"]["stream"]["expectedPreviousToken"].is_null());
-        assert_eq!(value["response"]["shouldEndSession"], true);
+        assert!(value["response"]["shouldEndSession"].is_null());
         assert!(value["response"]["outputSpeech"].is_null());
     }
 
