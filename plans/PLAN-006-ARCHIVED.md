@@ -22,8 +22,9 @@ Sustituir `reproductor navidrom` por `servidor personal`. Tras dos renombres, el
 - [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
 - [x] 4. Docs: renombrar/actualizar `docs/servidor-personal-invocation.md`, ajustar `docs/alexa-signature-playlists.md` y `HANDOFF.md`.
 - [x] 5. Validar JSON y reglas Alexa (dos palabras, minúsculas, sin artículos/preposiciones, sin «biblioteca» ni «reproductor»).
-- [ ] 6. Verificación externa: **activar Test → Development en la consola** y habilitar la skill en *Alexa → Skills y juegos → Tus habilidades → En desarrollo*; re-importar modelo, Build Model y probar «Alexa, abre servidor personal y dime qué álbumes tengo» → «dime más» en simulador y Echo; confirmar `{"kind":...,"offset":N}` y revisar `docker logs --tail 100 alexabridge` por `dispatching Alexa request` / `401`.
-- [ ] 7. Cierre: PR a `development`, cerrar PR #41, marcar tareas y renombrar a `plans/PLAN-006-ARCHIVED.md`; archivar el change; cerrar issues #38, #40 y #42.
+- [x] 6. Verificación externa: **activar Test → Development en la consola** y habilitar la skill en *Alexa → Skills y juegos → Tus habilidades → En desarrollo*; re-importar modelo, Build Model y probar «Alexa, abre servidor personal y dime qué álbumes tengo» → «dime más» en simulador y Echo; confirmar `{"kind":...,"offset":N}` y revisar `docker logs --tail 100 alexabridge` por `dispatching Alexa request` / `401`.
+- [x] 7. Cierre: PR a `development`, cerrar PR #41, marcar tareas y renombrar a `plans/PLAN-006-ARCHIVED.md`; archivar el change; cerrar issues #38, #40 y #42.
+- Verificación 27-11-2026 en Echo (`v0.2.1`): `LaunchRequest` 18:00–18:03Z abriendo `servidor personal`, `PlayPlaylistIntent` 18:24:36Z → `clasica` → `starting playback`/`playback started`, `ListPlaylistsIntent` 18:25:45Z/18:25:55Z → `MoreListingIntent` 18:26:01Z; sin `401` ni panic; el Dot respondió «no hay más» → fin de lista correcto (no quedaban playlists).
 
 ## Comandos de verificación
 `cargo test` · `cargo check` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`

@@ -1,0 +1,7 @@
+- [x] 1. RED: actualizar el test que exige `invocationName == "servidor personal"` y verificar que falla.
+- [x] 2. GREEN: actualizar `interaction_model.json` y verificar `cargo test` / `cargo check`.
+- [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
+- [x] 4. Renombrar/actualizar docs y `HANDOFF.md` con las nuevas frases.
+- [x] 5. Verificación externa: activar Development, habilitar skill, re-importar modelo, Build Model, probar en simulador y Echo, revisar logs.
+- [x] 6. Consolidar: marcar tareas, cerrar PR #41 y ejecutar `openspec archive servidor-personal-invocation`.
+- Verificado 27-11-2026 en Echo con `v0.2.1`: `LaunchRequest` 18:00–18:03Z, `PlayPlaylistIntent` 18:24:36Z (`clasica`, `starting playback`), `MoreListingIntent` 18:26:01Z; sin `401`; «no hay más» → fin de lista correcto.
