@@ -278,3 +278,32 @@ fn verify_signature_with_cert_rejects_malformed_base64() {
 
     assert!(matches!(result, Err(AuthError::SignatureDecode(_))));
 }
+
+#[test]
+fn model_declares_listing_intents() {
+    let model: Value =
+        serde_json::from_str(include_str!("../interaction_model.json")).expect("valid model JSON");
+    let intents = model["interactionModel"]["languageModel"]["intents"]
+        .as_array()
+        .expect("intents array");
+
+    for name in [
+        "ListAlbumsIntent",
+        "ListArtistsIntent",
+        "ListPlaylistsIntent",
+        "MoreListingIntent",
+    ] {
+        assert!(
+            intents.iter().any(|intent| intent["name"] == name),
+            "missing intent {name}"
+        );
+    }
+    for intent in intents {
+        let name = intent["name"].as_str().unwrap_or_default();
+        let samples = intent["samples"].as_array().map_or(0, Vec::len);
+        assert!(
+            !name.starts_with("AMAZON.") || samples == 0,
+            "AMAZON intent {name} has {samples} samples"
+        );
+    }
+}

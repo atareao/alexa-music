@@ -112,6 +112,10 @@ pub struct ResponseBody {
     pub getArtist: Option<GetArtistBody>,
     #[serde(default, rename = "topSongs")]
     pub getTopSongs: Option<TopSongsBody>,
+    #[serde(default, rename = "albumList2")]
+    pub albumList2: Option<AlbumList2Body>,
+    #[serde(default)]
+    pub artists: Option<ArtistsBody>,
 }
 
 /// Error detail included in a failed Subsonic response.
@@ -189,6 +193,36 @@ pub struct GetArtistBody {
 pub struct TopSongsBody {
     #[serde(default)]
     pub song: Option<Vec<Song>>,
+}
+
+/// `albumList2` payload returned by `getAlbumList2`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AlbumList2Body {
+    // The inner wrapper is flattened: the JSON key `albumList2` already maps
+    // to this struct in `ResponseBody`, so its payload is `{ "album": [...] }`.
+    #[serde(default, flatten, rename = "albumList2")]
+    album_list2: AlbumList2,
+}
+
+/// Albums nested inside an `albumList2` payload.
+#[derive(Debug, Clone, Default, Deserialize)]
+struct AlbumList2 {
+    #[serde(default)]
+    album: Vec<Album>,
+}
+
+/// `artists` payload returned by `getArtists`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ArtistsBody {
+    #[serde(default)]
+    index: Vec<ArtistIndex>,
+}
+
+/// One alphabetical index entry of an `artists` payload.
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ArtistIndex {
+    #[serde(default)]
+    artist: Vec<Artist>,
 }
 
 /// Generates a fresh 8-character alphanumeric salt and its auth token.
@@ -358,6 +392,36 @@ impl SubsonicClient {
             .song
             .unwrap_or_default())
     }
+
+    /// Lists albums alphabetically by name, paginated with `size` and `offset`.
+    pub async fn get_album_list(
+        &self,
+        size: usize,
+        offset: usize,
+    ) -> Result<Vec<Album>, SubsonicError> {
+        let extra = format!("type=alphabeticalByName&size={size}&offset={offset}");
+        let url = self.endpoint_url("getAlbumList2", &extra);
+        let body = self.get_json(&url).await?.subsonic_response;
+        ensure_ok(&body)?;
+        Ok(body
+            .albumList2
+            .ok_or(SubsonicError::MissingField("albumList2"))?
+            .album_list2
+            .album)
+    }
+
+    /// Lists all artists, flattening the alphabetical index entries.
+    pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
+        let url = self.endpoint_url("getArtists", "");
+        let body = self.get_json(&url).await?.subsonic_response;
+        ensure_ok(&body)?;
+        let artists = body.artists.ok_or(SubsonicError::MissingField("artists"))?;
+        Ok(artists
+            .index
+            .into_iter()
+            .flat_map(|index| index.artist)
+            .collect())
+    }
 }
 
 /// Rejects a Subsonic response whose status is not exactly `ok`.
@@ -488,6 +552,36 @@ mod tests {
         assert_eq!(songs.len(), 2, "songs: {songs:?}");
         assert_eq!(songs[0].id, "s1");
         assert_eq!(songs[1].id, "s2");
+    }
+
+    #[tokio::test]
+    async fn get_album_list_reads_alphabetical_albums() {
+        let server = MockPlaylistServer::start(
+            r#"{"subsonic-response":{"status":"ok","version":"1.16.1","albumList2":{"album":[{"id":"a1","name":"Álbum Uno","artist":"Artista A"},{"id":"a2","name":"Álbum Dos","artist":"Artista B"}]}}}"#,
+        )
+        .await;
+
+        let albums = server
+            .client()
+            .get_album_list(10, 0)
+            .await
+            .expect("album list");
+
+        assert_eq!(albums.len(), 2);
+        assert_eq!(albums[0].name, "Álbum Uno");
+    }
+
+    #[tokio::test]
+    async fn get_artists_flattens_index_entries() {
+        let server = MockPlaylistServer::start(
+            r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[{"artist":[{"id":"ar1","name":"Vivaldi"}]},{"artist":[{"id":"ar2","name":"Bach"}]}]}}}"#,
+        )
+        .await;
+
+        let artists = server.client().get_artists().await.expect("artist list");
+
+        assert_eq!(artists.len(), 2);
+        assert_eq!(artists[1].name, "Bach");
     }
 
     #[test]
