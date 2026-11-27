@@ -18,8 +18,9 @@ Arreglar que el Echo Dot reproduzca playlists cuyo nombre en Navidrome no lleva 
 - [x] 2. GREEN: normalizar diacritíticos de forma simétrica (vocales españolas á/é/í/ó/ú/ü tras `to_lowercase`; `ñ` se conserva como letra distinta); `cargo test` y `cargo check` en verde.
 - [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
 - [x] 4. Docs: crear `docs/playlist-accent-normalization.md` y actualizar `HANDOFF.md` con la evidencia de co1 y las frases de prueba.
-- [ ] 5. Verificación externa: en el Echo, «Alexa, abre servidor personal y reproduce la playlist clásica» debe reproducir `clasica`; revisar `docker logs --tail 100 alexabridge` en co1 buscando `PlayPlaylistIntent`, `starting playback` y ausencia de `no playlist matched` / `401`.
-- [ ] 6. Cierre: PR a `development`, marcar tareas, renombrar a `plans/PLAN-007-ARCHIVED.md`, archivar el change y cerrar el issue #44.
+- [x] 5. Verificación externa: en el Echo, «Alexa, abre servidor personal y reproduce la playlist clásica» debe reproducir `clasica`; revisar `docker logs --tail 100 alexabridge` en co1 buscando `PlayPlaylistIntent`, `starting playback` y ausencia de `no playlist matched` / `401`.
+- [x] 6. Cierre: PR a `development`, marcar tareas, renombrar a `plans/PLAN-007-ARCHIVED.md`, archivar el change y cerrar el issue #44.
+- **Verificación (27-11-2026 18:24:36Z):** con la imagen `v0.2.1`, `PlayPlaylistIntent` cargó la playlist `clasica` (11 canciones) y registró `starting playback` / `playback started`; sin `no playlist matched`, sin `401` y sin panic.
 
 ## Comandos de verificación
 `cargo test` · `cargo check` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`

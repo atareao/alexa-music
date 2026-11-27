@@ -1,0 +1,7 @@
+- [x] 1. RED: añadir el test de `clásica` vs `clasica` y verificar que falla.
+- [x] 2. GREEN: normalizar diacritíticos de forma simétrica y verificar `cargo test` / `cargo check`.
+- [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
+- [x] 4. Documentar el fix y actualizar `HANDOFF.md`.
+- [x] 5. Verificación externa: reproducir `clasica` desde el Echo y revisar logs de co1.
+- [x] 6. Consolidar: PR a `development`, marcar tareas y ejecutar `openspec archive playlist-accent-normalization`.
+- **Verificación (27-11-2026 18:24:36Z):** con la imagen `v0.2.1`, `PlayPlaylistIntent` cargó la playlist `clasica` (11 canciones) y registró `starting playback` / `playback started`; sin `no playlist matched`, sin `401` y sin panic.
