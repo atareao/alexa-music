@@ -40,7 +40,7 @@ Cuatro intents nuevos permiten consultar el contenido de la biblioteca de Navidr
 - `src/subsonic.rs` — `get_album_list(size, offset)` y `get_artists()`; la consulta de playlists reutiliza la resolución existente.
 - `interaction_model.json` — samples de los cuatro intents para locale es-ES.
 - `tests/webhook_test.rs` — pruebas de los intents, del cursor de paginación y del flujo "dime más".
-- `PLAN.md`, `plans/PLAN-003.md` y `openspec/changes/list-library-intents/` — plan y especificación del cambio (issue #31).
+- `PLAN.md`, `plans/PLAN-003-ARCHIVED.md` y `openspec/changes/archive/2026-11-27-list-library-intents/` — plan y especificación del cambio (issue #31).
 
 ### Cómo funcionan
 1. Alexa clasifica la frase y envía el intent al webhook con la firma verificada (mismo flujo de seguridad descrito arriba).
@@ -161,6 +161,6 @@ docker logs --tail 100 alexabridge                # en co1
 
 ## Seguimiento
 - Issue: [#16](https://github.com/atareao/alexa-music/issues/16). PRs: #17/#18 (firma), #19/#20 (modelo AudioPlayer), #21/#22 (sanitize Query), #23/#24 (samples AMAZON), #25/#26 (sanitize playlist), #27/#28 (entry playlist).
-- Listados `v0.2.0`: issue [#31](https://github.com/atareao/alexa-music/issues/31), PRs #32/#33; detalle en `plans/PLAN-003.md` y `openspec/changes/list-library-intents/`.
+- Listados `v0.2.0`: issue [#31](https://github.com/atareao/alexa-music/issues/31), PRs #32/#33; detalle en `plans/PLAN-003-ARCHIVED.md` y `openspec/changes/archive/2026-11-27-list-library-intents/`.
 - Documentación operativa: `docs/deploy-co1.md`.
 - **Pendiente:** desplegar `v0.2.0` en co1 (`docker compose pull/up -d alexabridge`), ejecutar *Build Model* en la consola Alexa si aún no se ha hecho y probar «Alexa, abre servidor personal y dime qué álbumes tengo» / «qué artistas tengo» / «qué playlists tengo» / «dime más». Sigue pendiente la confirmación auditiva en un Echo físico vinculado a la misma cuenta.
