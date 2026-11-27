@@ -310,10 +310,8 @@ fn model_declares_listing_intents() {
 
 #[test]
 fn model_declares_biblioteca_navidrom_invocation_name() {
-    let model_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("interaction_model.json");
-    let model_json = std::fs::read_to_string(&model_path).expect("read interaction_model.json");
-    let model: Value = serde_json::from_str(&model_json).expect("valid model JSON");
+    let model: Value =
+        serde_json::from_str(include_str!("../interaction_model.json")).expect("valid model JSON");
 
     assert_eq!(
         model["interactionModel"]["languageModel"]["invocationName"],
