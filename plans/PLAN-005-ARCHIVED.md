@@ -15,14 +15,14 @@ Permitir al usuario reproducir música aleatoria de tres formas: totalmente alea
 - Docs: `docs/random-music.md` y `HANDOFF.md`.
 
 ## Tareas (TDD)
-- [ ] 1. RED: test que exija los tres intents en `interaction_model.json`; `cargo test` falla solo ahí.
-- [ ] 2. RED: tests de `handle_play_random` (sin slot), `handle_play_random_artist` (slot Artist), `handle_play_random_playlist` (slot Playlist).
-- [ ] 3. GREEN: implementar métodos Subsonic (`get_random_songs`, `get_artist_songs`, `get_playlist_songs`).
-- [ ] 4. GREEN: implementar handlers y despacho.
-- [ ] 5. GREEN: actualizar `interaction_model.json`.
-- [ ] 6. REFACTOR: `cargo clippy --all-targets -- -D warnings`, `cargo fmt -- --check`.
-- [ ] 7. Docs: `docs/random-music.md`, `HANDOFF.md`.
-- [ ] 8. Cierre: PR a `development`, archivar change y plan, cerrar issue #52.
+- [x] 1. RED: test que exija los tres intents en `interaction_model.json`; `cargo test` falla solo ahí.
+- [x] 2. RED: tests de `handle_play_random` (sin slot), `handle_play_random_artist` (slot Artist), `handle_play_random_playlist` (slot Playlist).
+- [x] 3. GREEN: implementar métodos Subsonic (`get_random_songs`, `get_artist_songs`, `get_playlist_songs`).
+- [x] 4. GREEN: implementar handlers y despacho.
+- [x] 5. GREEN: actualizar `interaction_model.json`.
+- [x] 6. REFACTOR: `cargo clippy --all-targets -- -D warnings`, `cargo fmt -- --check`.
+- [x] 7. Docs: `docs/random-music.md`, `HANDOFF.md`.
+- [x] 8. Cierre: PR a `development`, archivar change y plan, cerrar issue #52.
 
 ## Comandos de verificación
 `cargo test` · `cargo check` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`

@@ -14,17 +14,17 @@ Cambiar el nombre de invocación del skill de `servidor personal` a `biblioteca 
 
 ## Tareas (TDD)
 
-- [ ] 1. RED: añadir test que exija que `biblioteca musical == "biblioteca musical"`; `cargo test` debe fallar solo en ese caso.
+- [x] 1. RED: añadir test que exija que `biblioteca musical == "biblioteca musical"`; `cargo test` debe fallar solo en ese caso.
 
-- [ ] 2. GREEN: actualizar `interaction_model.json` con `invocationName: "biblioteca musical"`; `cargo test` y `cargo check` en verde.
+- [x] 2. GREEN: actualizar `interaction_model.json` con `invocationName: "biblioteca musical"`; `cargo test` y `cargo check` en verde.
 
-- [ ] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
+- [x] 3. REFACTOR: `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check`.
 
-- [ ] 4. Docs: crear/actualizar `docs/servidor-personal-invocation.md` y `HANDOFF.md` con evidencia de cambio y pasos de verificación.
+- [x] 4. Docs: crear/actualizar `docs/servidor-personal-invocation.md` y `HANDOFF.md` con evidencia de cambio y pasos de verificación.
 
-- [ ] 5. Verificación externa: en la app Alexa (misma cuenta del Dot) → *Más → Skills y juegos → Tus habilidades → En desarrollo* → **Habilitar** `biblioteca musical`; en la consola Alexa, *Test* → *Development*; hacer *Build Model* y probar «Alexa, abre biblioteca musical y dime qué álbumes tengo» → «dime más».
+- [x] 5. Verificación externa: en la app Alexa (misma cuenta del Dot) → *Más → Skills y juegos → Tus habilidades → En desarrollo* → **Habilitar** `biblioteca musical`; en la consola Alexa, *Test* → *Development*; hacer *Build Model* y probar «Alexa, abre biblioteca musical y dime qué álbumes tengo» → «dime más».
 
-- [ ] 6. Cierre: PR a `development`, marcar tareas, renombrar a `plans/PLAN-004-ARCHIVED.md`, archivar el change y cerrar el issue #50.
+- [x] 6. Cierre: PR a `development`, marcar tareas, renombrar a `plans/PLAN-004-ARCHIVED.md`, archivar el change y cerrar el issue #50.
 
 ## Comandos de verificación
 `cargo test` · `cargo check` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check` · `docker compose logs --tail 100 alexabridge` (verificar despliegue en co1)
