@@ -2,8 +2,8 @@
 
 ## Estado
 - Release/tag anotado `v0.2.2` sobre el commit de PR #53; imagen `ghcr.io/atareao/alexa-music:v0.2.2` desplegada en co1 y verificada el 28-11-2026: `/health` 200 y `/webhook` sin firma 401.
-- 107 tests en verde (85+7+4+11) tras el merge; `cargo check`, `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check` limpios; auditoría ✅ APROBADA.
-- PR #43 y #45 **MERGED** en `development` (merge commits `b7b3f7e` y `32fdef2`); conflicto de `HANDOFF.md` resuelto en `af5ee45`. `development` HEAD `32fdef2`.
+- 110 tests en verde (85+7+4+14) tras el merge; `cargo check`, `cargo clippy --all-targets -- -D warnings` y `cargo fmt -- --check` limpios; auditoría ✅ APROBADA.
+- PR #43 y #45 **MERGED** en `development` (merge commits `b7b3f7e` y `32fdef2`); conflicto de `HANDOFF.md` resuelto en `af5ee45`. HEAD de `development` `88f07ca` (tras PR #53 y #54).
 - `v0.2.0` añade `ListAlbumsIntent`, `ListArtistsIntent`, `ListPlaylistsIntent` y `MoreListingIntent`, con paginación de 10 mediante `sessionAttributes.listing = {"kind": "...", "offset": N}`. Issue #31; PRs #32/#33.
 
 ## Arquitectura (resumen 3 líneas)
