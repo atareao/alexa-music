@@ -25,7 +25,7 @@
 2. Confirmación en Echo físico: verificado en Echo el 27-11-2026 18:24:36Z con `v0.2.1` (`PlayPlaylistIntent`, `starting playback`, sin `no playlist matched` ni 401). El simulador web no reproduce audio, pero los logs confirman `AudioPlayer.PlaybackStarted`.
 3. Fix de acentos (issue #44, `PLAN-007`, commits `0da8a6a`/`12b1ac1`/`aeb00fb`) verificado en Echo el 27-11-2026 18:24:36Z con `v0.2.1`: «Alexa, abre biblioteca musical y reproduce la playlist clásica» → `PlayPlaylistIntent`, playlist `clasica` (11 canciones), `starting playback` y `playback started`; sin `no playlist matched`, sin `401` ni panic. Issue #44 cerrado; `PLAN-007` y el change OpenSpec archivados.
 4. `PLAN-006` / issue #42 cerrado: PR #43 (`b7b3f7e`) y PR #45 (`32fdef2`) **MERGED** en `development`; conflicto de `HANDOFF.md` resuelto en `af5ee45`; PR #41 cerrado sin merge. Verificación en Echo del 27-11-2026 con `v0.2.1` completada (punto 1): invocación, reproducción y paginación («no hay más» → fin de lista correcto), sin `401`. `PLAN-006` y el change OpenSpec archivados; issues #38, #40 y #42 cerrados.
-5. `v0.2.2` con intents de música aleatoria (issue #52, PLAN-005, PR #53) desplegado en co1; frases verificadas por HTTP, pendiente de confirmación auditiva en Echo.
+5. `v0.2.2` con intents de música aleatoria (issue #52, PLAN-005, PR #53) desplegado en co1 y confirmado en Echo el 28-11-2026: «pon música aleatoria», «pon música aleatoria de [artista]» y «pon música aleatoria de la playlist [nombre]» funcionan correctamente.
 
 ## Comandos útiles
 - `cargo test` · `cargo check` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt -- --check`
