@@ -526,6 +526,13 @@ pub async fn handle_request(
             "AMAZON.NavigateHomeIntent" => handle_navigate_home(),
             "AMAZON.ShuffleOnIntent" => handle_shuffle(req, state, true).await,
             "AMAZON.ShuffleOffIntent" => handle_shuffle(req, state, false).await,
+            "PlayRandomIntent" => handle_play_random(req, client, state).await,
+            "PlayRandomArtistIntent" => {
+                handle_play_random_artist(req, &intent.slots, client, state).await
+            }
+            "PlayRandomPlaylistIntent" => {
+                handle_play_random_playlist(req, &intent.slots, client, state).await
+            }
             other => {
                 warn!(intent = other, "unsupported intent");
                 speak("No he reconocido esa solicitud.", true)
@@ -858,6 +865,163 @@ pub async fn handle_play_playlist(
         Ok(tracks) => tracks,
         Err(err) => {
             error!(error = %err, playlist_id = %playlist.id, "getPlaylist failed");
+            return speak(
+                "No he podido cargar la lista de reproducción. Inténtalo de nuevo.",
+                true,
+            );
+        }
+    };
+
+    start_queue(
+        req,
+        &tracks,
+        client,
+        state,
+        |_song| {
+            let name = playlist.name.as_str();
+            format!("Reproduciendo la lista {name}.")
+        },
+        "La lista de reproducción está vacía.",
+    )
+}
+
+/// Plays a random selection of songs from the library.
+pub async fn handle_play_random(
+    req: &AlexaRequest,
+    client: &SubsonicClient,
+    state: &AppState,
+) -> AlexaResponse {
+    let tracks = match client.get_random_songs(50).await {
+        Ok(tracks) => tracks,
+        Err(err) => {
+            error!(error = %err, "getRandomSongs failed");
+            return speak(
+                "No he podido cargar canciones aleatorias. Inténtalo de nuevo.",
+                true,
+            );
+        }
+    };
+
+    if tracks.is_empty() {
+        return speak("No hay canciones para reproducir aleatoriamente.", true);
+    }
+
+    start_queue(
+        req,
+        &tracks,
+        client,
+        state,
+        |song| {
+            let title = song.title.as_str();
+            let artist = song.artist.as_str();
+            format!("Reproduciendo aleatorio: {title} de {artist}.")
+        },
+        "No hay canciones disponibles.",
+    )
+}
+
+/// Plays songs from a randomly selected artist matching the spoken name.
+pub async fn handle_play_random_artist(
+    req: &AlexaRequest,
+    slots: &HashMap<String, Slot>,
+    client: &SubsonicClient,
+    state: &AppState,
+) -> AlexaResponse {
+    let Some(query) = slot_value(slots, "Artist") else {
+        warn!("PlayRandomArtistIntent received no Artist slot");
+        return speak("No he entendido qué artista quieres escuchar.", true);
+    };
+
+    let search_query = sanitize_search_query(query);
+    let results = match client.search3(&search_query).await {
+        Ok(results) => results,
+        Err(err) => {
+            error!(error = %err, query, "search3 failed");
+            return speak(
+                "No he podido buscar en tu biblioteca. Inténtalo de nuevo.",
+                true,
+            );
+        }
+    };
+
+    let Some(artist) = results.artists.first() else {
+        warn!(query, "no artist matched the spoken name");
+        return speak("No he encontrado ese artista.", true);
+    };
+    info!(
+        artist_id = %artist.id,
+        artist = %artist.name,
+        "loading artist songs"
+    );
+
+    let tracks = match client.get_artist_songs(&artist.id).await {
+        Ok(tracks) => tracks,
+        Err(err) => {
+            error!(error = %err, artist_id = %artist.id, "getArtistSongs failed");
+            return speak(
+                "No he podido cargar las canciones de ese artista. Inténtalo de nuevo.",
+                true,
+            );
+        }
+    };
+
+    start_queue(
+        req,
+        &tracks,
+        client,
+        state,
+        |song| {
+            let title = song.title.as_str();
+            let artist_name = song.artist.as_str();
+            format!("Reproduciendo {title} de {artist_name}.")
+        },
+        "No he encontrado canciones de ese artista.",
+    )
+}
+
+/// Plays songs from a randomly selected playlist matching the spoken name.
+pub async fn handle_play_random_playlist(
+    req: &AlexaRequest,
+    slots: &HashMap<String, Slot>,
+    client: &SubsonicClient,
+    state: &AppState,
+) -> AlexaResponse {
+    let Some(query) = slot_value(slots, "Playlist") else {
+        warn!("PlayRandomPlaylistIntent received no Playlist slot");
+        return speak("No he entendido qué playlist quieres escuchar.", true);
+    };
+
+    let playlists = match client.get_playlists().await {
+        Ok(playlists) => playlists,
+        Err(err) => {
+            error!(error = %err, "getPlaylists failed");
+            return speak(
+                "No he podido consultar tus listas de reproducción. Inténtalo de nuevo.",
+                true,
+            );
+        }
+    };
+
+    let search_query = sanitize_search_query(query);
+    let needle = normalize_for_playlist_search(&search_query);
+    let Some(playlist) = playlists
+        .iter()
+        .find(|playlist| normalize_for_playlist_search(&playlist.name).contains(&needle))
+    else {
+        warn!(query, "no playlist matched the spoken name");
+        return speak("No he encontrado esa lista de reproducción.", true);
+    };
+    info!(
+        playlist_id = %playlist.id,
+        playlist = %playlist.name,
+        song_count = ?playlist.songCount,
+        "loading playlist tracks"
+    );
+
+    let tracks = match client.get_playlist_songs(&playlist.id).await {
+        Ok(tracks) => tracks,
+        Err(err) => {
+            error!(error = %err, playlist_id = %playlist.id, "getPlaylistSongs failed");
             return speak(
                 "No he podido cargar la lista de reproducción. Inténtalo de nuevo.",
                 true,

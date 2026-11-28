@@ -318,3 +318,66 @@ fn model_declares_biblioteca_musical_invocation_name() {
         "biblioteca musical"
     );
 }
+
+#[test]
+fn model_declares_play_random_intent() {
+    let model: Value =
+        serde_json::from_str(include_str!("../interaction_model.json")).expect("valid model JSON");
+
+    let intents = model["interactionModel"]["languageModel"]["intents"]
+        .as_array()
+        .expect("intents array");
+
+    let names: Vec<&str> = intents
+        .iter()
+        .map(|i| i["name"].as_str().unwrap_or(""))
+        .collect();
+
+    assert!(
+        names.contains(&"PlayRandomIntent"),
+        "PlayRandomIntent missing from interaction model. Found: {:?}",
+        names
+    );
+}
+
+#[test]
+fn model_declares_play_random_artist_intent() {
+    let model: Value =
+        serde_json::from_str(include_str!("../interaction_model.json")).expect("valid model JSON");
+
+    let intents = model["interactionModel"]["languageModel"]["intents"]
+        .as_array()
+        .expect("intents array");
+
+    let names: Vec<&str> = intents
+        .iter()
+        .map(|i| i["name"].as_str().unwrap_or(""))
+        .collect();
+
+    assert!(
+        names.contains(&"PlayRandomArtistIntent"),
+        "PlayRandomArtistIntent missing from interaction model. Found: {:?}",
+        names
+    );
+}
+
+#[test]
+fn model_declares_play_random_playlist_intent() {
+    let model: Value =
+        serde_json::from_str(include_str!("../interaction_model.json")).expect("valid model JSON");
+
+    let intents = model["interactionModel"]["languageModel"]["intents"]
+        .as_array()
+        .expect("intents array");
+
+    let names: Vec<&str> = intents
+        .iter()
+        .map(|i| i["name"].as_str().unwrap_or(""))
+        .collect();
+
+    assert!(
+        names.contains(&"PlayRandomPlaylistIntent"),
+        "PlayRandomPlaylistIntent missing from interaction model. Found: {:?}",
+        names
+    );
+}
