@@ -80,7 +80,12 @@
         },
         {
           "name": "MoreListingIntent",
-          "samples": ["dime más", "siguientes", "más", "sigue"]
+          "samples": [
+            "dime más",
+            "siguientes",
+            "más",
+            "sigue"
+          ]
         },
         {
           "name": "AMAZON.NextIntent",
@@ -125,6 +130,51 @@
         {
           "name": "AMAZON.FallbackIntent",
           "samples": []
+        },
+        {
+          "name": "PlayRandomIntent",
+          "samples": [
+            "pon música aleatoria",
+            "pon música aleatoria por favor",
+            "reproduce música aleatoria",
+            "toca algo aleatorio",
+            "reproduce algo al azar",
+            "pon algo aleatorio"
+          ]
+        },
+        {
+          "name": "PlayRandomArtistIntent",
+          "slots": [
+            {
+              "name": "Artist",
+              "type": "AMAZON.SearchQuery",
+              "samples": []
+            }
+          ],
+          "samples": [
+            "pon música aleatoria de {Artist}",
+            "reproduce música aleatoria de {Artist}",
+            "toca música aleatoria de {Artist}",
+            "suena algo aleatorio de {Artist}",
+            "pon cualquier canción de {Artist}"
+          ]
+        },
+        {
+          "name": "PlayRandomPlaylistIntent",
+          "slots": [
+            {
+              "name": "Playlist",
+              "type": "AMAZON.SearchQuery",
+              "samples": []
+            }
+          ],
+          "samples": [
+            "pon música aleatoria de la playlist {Playlist}",
+            "pon música aleatoria de la lista {Playlist}",
+            "reproduce música aleatoria de la playlist {Playlist}",
+            "toca música aleatoria de la playlist {Playlist}",
+            "reproduce algo aleatorio de la playlist {Playlist}"
+          ]
         }
       ],
       "types": []

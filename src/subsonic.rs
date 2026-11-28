@@ -112,6 +112,8 @@ pub struct ResponseBody {
     pub getArtist: Option<GetArtistBody>,
     #[serde(default, rename = "topSongs")]
     pub getTopSongs: Option<TopSongsBody>,
+    #[serde(default, rename = "randomSongs")]
+    pub getRandomSongs: Option<RandomSongsBody>,
     #[serde(default, rename = "albumList2")]
     pub albumList2: Option<AlbumList2Body>,
     #[serde(default)]
@@ -191,6 +193,13 @@ pub struct GetArtistBody {
 /// Tracks returned by `getTopSongs`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TopSongsBody {
+    #[serde(default)]
+    pub song: Option<Vec<Song>>,
+}
+
+/// Tracks returned by `getRandomSongs`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RandomSongsBody {
     #[serde(default)]
     pub song: Option<Vec<Song>>,
 }
@@ -422,9 +431,55 @@ impl SubsonicClient {
             .flat_map(|index| index.artist)
             .collect())
     }
+
+    /// Returns a random selection of songs from the library.
+    ///
+    /// Uses the `getRandomSongs` endpoint with `type=random`. The `size`
+    /// parameter limits the number of songs returned (default 50).
+    pub async fn get_random_songs(&self, size: usize) -> Result<Vec<Song>, SubsonicError> {
+        let extra = format!("type=random&size={size}");
+        let url = self.endpoint_url("getRandomSongs", &extra);
+        let body = self.get_json(&url).await?.subsonic_response;
+        ensure_ok(&body)?;
+        Ok(body
+            .getRandomSongs
+            .ok_or(SubsonicError::MissingField("randomSongs"))?
+            .song
+            .unwrap_or_default())
+    }
+
+    /// Returns the most popular songs of an artist.
+    ///
+    /// Uses the `getTopSongs` endpoint with the artist ID. The result is
+    /// limited to 50 songs by the server.
+    pub async fn get_artist_songs(&self, id: &str) -> Result<Vec<Song>, SubsonicError> {
+        let url = self.endpoint_url(
+            "getTopSongs",
+            &format!("artist={}", urlencoding::encode(id)),
+        );
+        let body = self.get_json(&url).await?.subsonic_response;
+        ensure_ok(&body)?;
+        Ok(body
+            .getTopSongs
+            .ok_or(SubsonicError::MissingField("topSongs"))?
+            .song
+            .unwrap_or_default())
+    }
+
+    /// Returns the songs of a playlist.
+    ///
+    /// Uses the `getPlaylist` endpoint with the playlist ID.
+    pub async fn get_playlist_songs(&self, id: &str) -> Result<Vec<Song>, SubsonicError> {
+        let url = self.endpoint_url("getPlaylist", &format!("id={}", urlencoding::encode(id)));
+        let body = self.get_json(&url).await?.subsonic_response;
+        ensure_ok(&body)?;
+        Ok(body
+            .getPlaylist
+            .ok_or(SubsonicError::MissingField("playlist"))?
+            .songs())
+    }
 }
 
-/// Rejects a Subsonic response whose status is not exactly `ok`.
 fn ensure_ok(body: &ResponseBody) -> Result<(), SubsonicError> {
     match body.status.as_deref() {
         Some("ok") => Ok(()),
